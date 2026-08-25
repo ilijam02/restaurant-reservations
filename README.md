@@ -42,7 +42,7 @@ A restaurant reservation and ordering platform made up of three separate web app
 
 ## Repository structure
 
-Not yet decided. Options under consideration include a monorepo with one directory per application (`customer/`, `employee/`, `owner/`) and a shared backend/API, versus separate services per app. This section will be updated once the architecture is settled.
+Monorepo with one directory per application: [`customer/`](customer/), [`employee/`](employee/), [`owner/`](owner/), plus [`shared/`](shared/) for code and contracts used across apps (backend API/client, shared types, auth). Tech stack and inter-app data sharing are still being decided — see [CLAUDE.md](CLAUDE.md).
 
 ## Getting started
 
