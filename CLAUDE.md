@@ -16,10 +16,13 @@ See [README.md](README.md) for the full feature list.
 
 ## Current state
 
-This repository is in the planning stage — no application code, framework, or architecture has been chosen yet. When implementation begins, update this file with:
+This repository is in the planning stage — no application code, framework, or database has been chosen yet.
+
+**Repository layout (decided):** a monorepo with one directory per app — `customer/`, `employee/`, `owner/` — plus `shared/` for code and contracts used across apps (backend API/client, shared types, auth). Each of these directories has its own `CLAUDE.md` for app-specific conventions once that app is implemented; this root file stays limited to cross-cutting, repo-wide conventions. See each directory's `CLAUDE.md` for its current status.
+
+When implementation begins, update this file with:
 
 - the chosen tech stack per application (frontend framework, backend, database)
-- repository layout (monorepo vs. separate apps/services) and where each app lives
 - how the three apps share code/data (shared API, shared types, auth, payments)
 - build, test, and lint commands for each app
 - local dev setup (env vars, services required, seed data)
