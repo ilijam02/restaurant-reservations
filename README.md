@@ -2,7 +2,7 @@
 
 A restaurant reservation and ordering platform made up of three separate web applications, one per user role: **Customer**, **Employee**, and **Owner**.
 
-> **Status:** early planning / pre-implementation. No tech stack has been chosen yet — this document describes the intended scope and will evolve as architecture decisions are made.
+> **Status:** early planning / pre-implementation. Tech stack chosen (Next.js + Supabase + Stripe — see [CLAUDE.md](CLAUDE.md)); no application code has been written yet.
 
 ## Applications
 

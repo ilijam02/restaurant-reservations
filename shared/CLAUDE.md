@@ -1,7 +1,9 @@
 # CLAUDE.md — shared
 
-> Status: not yet implemented. This file is a placeholder until the backend/data layer is chosen (see root [CLAUDE.md](../CLAUDE.md)).
+> Status: not yet implemented. Stack decided (see root [CLAUDE.md](../CLAUDE.md)) but no code written yet.
 
-Code and contracts shared across the customer, employee, and owner apps — expected to include things like the backend API (or API client), shared types/schemas, and authentication, once those are decided.
+Code and contracts shared across the customer, employee, and owner apps.
 
-Once implemented, this file should document: what actually lives here (backend framework, shared types, auth), and its build/test/lint commands.
+**Planned contents:** the Supabase client setup, generated/shared TypeScript types (including generated Postgres types), shared UI components, and Supabase Edge Functions for server-trusted logic (Stripe webhook handling, payment intent creation, reservation-slot validation, future recommendation scoring).
+
+Once implemented, this file should document: this directory's actual structure and its build/test/lint commands.

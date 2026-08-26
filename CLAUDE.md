@@ -16,16 +16,27 @@ See [README.md](README.md) for the full feature list.
 
 ## Current state
 
-This repository is in the planning stage — no application code, framework, or database has been chosen yet.
+This repository is in the planning stage — no application code has been written yet, but the stack is now decided.
 
 **Repository layout (decided):** a monorepo with one directory per app — `customer/`, `employee/`, `owner/` — plus `shared/` for code and contracts used across apps (backend API/client, shared types, auth). Each of these directories has its own `CLAUDE.md` for app-specific conventions once that app is implemented; this root file stays limited to cross-cutting, repo-wide conventions. See each directory's `CLAUDE.md` for its current status.
 
-When implementation begins, update this file with:
+**Tech stack (decided):**
 
-- the chosen tech stack per application (frontend framework, backend, database)
-- how the three apps share code/data (shared API, shared types, auth, payments)
-- build, test, and lint commands for each app
-- local dev setup (env vars, services required, seed data)
+- **Frontend:** Next.js, one app per role (`customer/`, `employee/`, `owner/`), each a thin client calling Supabase directly for data/auth/realtime. Shared UI components and TypeScript types live in `shared/`.
+- **Backend/data:** [Supabase](https://supabase.com) — PostgreSQL, Supabase Auth, Supabase Realtime, and Supabase Storage (for restaurant images). Custom server-trusted logic (Stripe webhook handling, payment intent creation, reservation-slot validation, recommendation scoring) goes in Supabase Edge Functions rather than a hand-rolled backend service.
+- **Authorization:** Postgres Row-Level Security (RLS) policies keyed off a role claim (customer/employee/owner), rather than app-level permission checks — this also gates Realtime subscriptions automatically.
+- **Database integrity:** a Postgres exclusion constraint on table/time-range prevents double-booking at the DB level.
+- **Payments:** Stripe.
+- **Maps:** not yet decided — Mapbox vs. Google Places is still open.
+- **Future ML recommendations:** deferred, but the schema should accommodate `pgvector` for embedding-based similarity/ranking when built.
+- **Monorepo tooling:** Turborepo or pnpm workspaces (not yet finalized).
+
+Not yet decided / still needed before implementation starts:
+
+- Maps provider (Mapbox vs. Google Places)
+- Monorepo build tooling specifics
+- Build, test, and lint commands for each app
+- Local dev setup (env vars, Supabase project setup, seed data)
 
 ## Working conventions
 
