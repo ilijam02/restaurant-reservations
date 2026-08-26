@@ -2,7 +2,7 @@
 
 A restaurant reservation and ordering platform: a single web application serving three user roles: **Customer**, **Employee**, and **Owner**.
 
-> **Status:** early planning / pre-implementation. Tech stack and architecture chosen (single Next.js app + Supabase + Stripe — see [CLAUDE.md](CLAUDE.md)); no application code has been written yet.
+> **Status:** early development. Tech stack and architecture chosen (single Next.js app + Supabase + Stripe — see [CLAUDE.md](CLAUDE.md)); authentication is implemented, everything else is still unbuilt.
 
 ## Applications
 
@@ -42,11 +42,16 @@ A restaurant reservation and ordering platform: a single web application serving
 
 ## Repository structure
 
-A single Next.js application at the repo root — not a monorepo of separate apps. The three roles are organized internally as route groups so role-specific code stays cleanly separated within the one app, without the overhead of three separate deployments for a pre-launch product. See [CLAUDE.md](CLAUDE.md) for the full reasoning and current tech stack.
+A single Next.js application at the repo root — not a monorepo of separate apps. The three roles are organized internally as top-level route folders so role-specific code stays cleanly separated within the one app, without the overhead of three separate deployments for a pre-launch product. See [CLAUDE.md](CLAUDE.md) for the full reasoning and current tech stack.
 
 ## Getting started
 
-No setup instructions yet — the codebase hasn't been started.
+1. `npm install`
+2. Copy `.env.example` to `.env.local` and fill in your Supabase project's URL and anon key (Settings → API).
+3. In your Supabase project, disable **"Confirm email"** (Authentication → Sign In / Providers → Email) so signup logs the user in immediately, and run the SQL migration(s) in `supabase/migrations/` via the SQL Editor.
+4. `npm run dev` and open `http://localhost:3000`.
+
+Other commands: `npm run build`, `npm run lint`, `npm test`.
 
 ## License
 
