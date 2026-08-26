@@ -25,6 +25,7 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
+      - run: npm test
       # `next build` runs full TypeScript type-checking itself as part of
       # the build (it also generates route types like LayoutProps that a
       # standalone `tsc --noEmit` can't see on a clean checkout), so there's
