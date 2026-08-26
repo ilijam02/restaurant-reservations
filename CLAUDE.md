@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repository.
+@AGENTS.md
+
+Guidance for Claude Code when working in this repository. (`AGENTS.md`, imported above, is auto-generated/refreshed by `next dev` with Next.js-version-specific agent warnings — leave it in place and let it regenerate rather than hand-editing it.)
 
 ## Project overview
 
