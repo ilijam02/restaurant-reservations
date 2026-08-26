@@ -1,8 +1,8 @@
 # Restaurant Reservations
 
-A restaurant reservation and ordering platform made up of three separate web applications, one per user role: **Customer**, **Employee**, and **Owner**.
+A restaurant reservation and ordering platform: a single web application serving three user roles: **Customer**, **Employee**, and **Owner**.
 
-> **Status:** early planning / pre-implementation. Tech stack chosen (Next.js + Supabase + Stripe — see [CLAUDE.md](CLAUDE.md)); no application code has been written yet.
+> **Status:** early planning / pre-implementation. Tech stack and architecture chosen (single Next.js app + Supabase + Stripe — see [CLAUDE.md](CLAUDE.md)); no application code has been written yet.
 
 ## Applications
 
@@ -42,7 +42,7 @@ A restaurant reservation and ordering platform made up of three separate web app
 
 ## Repository structure
 
-Monorepo with one directory per application: [`customer/`](customer/), [`employee/`](employee/), [`owner/`](owner/), plus [`shared/`](shared/) for code and contracts used across apps (backend API/client, shared types, auth). Tech stack and inter-app data sharing are still being decided — see [CLAUDE.md](CLAUDE.md).
+A single Next.js application at the repo root — not a monorepo of separate apps. The three roles are organized internally as route groups so role-specific code stays cleanly separated within the one app, without the overhead of three separate deployments for a pre-launch product. See [CLAUDE.md](CLAUDE.md) for the full reasoning and current tech stack.
 
 ## Getting started
 
