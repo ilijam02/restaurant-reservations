@@ -11,6 +11,18 @@ Take these to the design decisions chat when they come up next.
 
 - [ ] Maps provider: Mapbox vs Google Places
 
+## Decided
+
+Already settled in the design decisions chat, documented in full in `CLAUDE.md`. Listed here for visibility, not to re-litigate.
+
+- Repo layout: single Next.js app, role-based top-level route folders (`app/customer/`, `app/employee/`, `app/owner/`) — not separate apps per role
+- Frontend: Next.js, TypeScript, App Router
+- Backend/data: Supabase (Postgres, Auth, Realtime, Storage); custom trusted logic (Stripe webhooks, payment intents, slot validation, recommendation scoring) in Supabase Edge Functions
+- Authorization: Postgres RLS keyed off a role claim, not app-level checks
+- Double-booking prevention: Postgres exclusion constraint on table/time-range
+- Payments: Stripe
+- ML recommendations: deferred, but schema should accommodate `pgvector` for when it's built
+
 ## Done
 
 - [x] Auth: login/signup, role-based home pages (`/customer`, `/employee`, `/owner`)
