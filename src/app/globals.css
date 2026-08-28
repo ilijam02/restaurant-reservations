@@ -45,6 +45,14 @@
   }
 }
 
+/* html, not just body: with color-scheme set, the browser paints its own
+   dark/light UA default canvas wherever html itself isn't explicitly
+   styled - that default is much darker than --background, so without this
+   the page reads as black around/behind anything body doesn't cover. */
+html {
+  background: var(--background);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
