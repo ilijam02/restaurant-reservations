@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* stone, not pure white/black - a warm neutral undertone that reads as
+     "designed" rather than a bare grayscale default, and pairs with the
+     orange accent instead of clashing against a cool gray */
+  --background: #fafaf9; /* stone-50 */
+  --foreground: #1c1917; /* stone-900 */
   /* orange-700: passes AA as both body text on white and as a button fill
      with white text (orange-600 alone fails the button-fill case, ~3.6:1) */
   --accent: #c2410c;
@@ -27,12 +30,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    /* orange-400: strong contrast as text on near-black, and pairs with
-       dark --accent-foreground for a fill button rather than white text */
+    /* warm dark stone, not near-black - black is reserved for small
+       details (text, thin borders), never a dominant surface/background */
+    --background: #1c1917; /* stone-900 */
+    --foreground: #f5f5f4; /* stone-100 */
+    /* orange-400: strong contrast as text on this background, and pairs
+       with dark --accent-foreground for a fill button rather than white text */
     --accent: #fb923c;
-    --accent-foreground: #171717;
+    --accent-foreground: #1c1917;
     --success: #4ade80; /* green-400 */
     --warning: #fbbf24; /* amber-400 */
     --danger: #f87171; /* red-400 */
