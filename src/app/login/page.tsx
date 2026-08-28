@@ -82,7 +82,7 @@ export default function LoginPage() {
 
         <p className="text-sm">
           Nemate nalog?{" "}
-          <Link href="/signup" className="font-medium text-accent underline">
+          <Link href="/signup" className="font-medium text-orange-700 underline dark:text-accent">
             Registrujte se
           </Link>
         </p>

@@ -158,7 +158,7 @@ export default function SignupPage() {
 
         <p className="text-sm">
           Već imate nalog?{" "}
-          <Link href="/login" className="font-medium text-accent underline">
+          <Link href="/login" className="font-medium text-orange-700 underline dark:text-accent">
             Prijavite se
           </Link>
         </p>

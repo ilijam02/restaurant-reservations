@@ -6,10 +6,13 @@
      orange accent instead of clashing against a cool gray */
   --background: #fafaf9; /* stone-50 */
   --foreground: #1c1917; /* stone-900 */
-  /* orange-700: passes AA as both body text on white and as a button fill
-     with white text (orange-600 alone fails the button-fill case, ~3.6:1) */
-  --accent: #c2410c;
-  --accent-foreground: #ffffff;
+  /* orange-500: brighter/more vivid than orange-700, but too light for AA
+     as a white-text fill, so pair with dark text instead - dark-on-orange-500
+     clears AA easily. Plain text/links use a darker, safe shade instead of
+     this variable (see login/signup pages) since orange-500 as small text on
+     this light background falls well short of AA on its own. */
+  --accent: #f97316;
+  --accent-foreground: #1c1917;
   --success: #16a34a; /* green-600 */
   --warning: #f59e0b; /* amber-500 */
   --danger: #dc2626; /* red-600 */
@@ -34,9 +37,11 @@
        details (text, thin borders), never a dominant surface/background */
     --background: #1c1917; /* stone-900 */
     --foreground: #f5f5f4; /* stone-100 */
-    /* orange-400: strong contrast as text on this background, and pairs
-       with dark --accent-foreground for a fill button rather than white text */
-    --accent: #fb923c;
+    /* orange-300: brighter than orange-400, still strong contrast both as
+       text on this dark background and as a button fill with dark text -
+       light-on-dark doesn't have the light-on-light problem light mode
+       does, so this can be used for text/links too, not just fills. */
+    --accent: #fdba74;
     --accent-foreground: #1c1917;
     --success: #4ade80; /* green-400 */
     --warning: #fbbf24; /* amber-400 */
