@@ -3,12 +3,24 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* orange-700: passes AA as both body text on white and as a button fill
+     with white text (orange-600 alone fails the button-fill case, ~3.6:1) */
+  --accent: #c2410c;
+  --accent-foreground: #ffffff;
+  --success: #16a34a; /* green-600 */
+  --warning: #f59e0b; /* amber-500 */
+  --danger: #dc2626; /* red-600 */
   color-scheme: light;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -17,6 +29,13 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    /* orange-400: strong contrast as text on near-black, and pairs with
+       dark --accent-foreground for a fill button rather than white text */
+    --accent: #fb923c;
+    --accent-foreground: #171717;
+    --success: #4ade80; /* green-400 */
+    --warning: #fbbf24; /* amber-400 */
+    --danger: #f87171; /* red-400 */
     color-scheme: dark;
   }
 }
