@@ -10,6 +10,7 @@ move it to Done with a short note).
 Take these to the design decisions chat when they come up next.
 
 - [ ] Maps provider: Mapbox vs Google Places
+- [ ] Restaurants table: core columns (name, address/location, hours, etc.) — initial cut, layout/sections can come later
 
 ## Decided
 
