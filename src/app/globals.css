@@ -1,26 +1,65 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* stone, not pure white/black - a warm neutral undertone that reads as
+     "designed" rather than a bare grayscale default, and pairs with the
+     orange accent instead of clashing against a cool gray */
+  --background: #fafaf9; /* stone-50 */
+  --foreground: #1c1917; /* stone-900 */
+  /* orange-500: brighter/more vivid than orange-700, but too light for AA
+     as a white-text fill, so pair with dark text instead - dark-on-orange-500
+     clears AA easily. Plain text/links use a darker, safe shade instead of
+     this variable (see login/signup pages) since orange-500 as small text on
+     this light background falls well short of AA on its own. */
+  --accent: #f97316;
+  --accent-foreground: #1c1917;
+  --success: #16a34a; /* green-600 */
+  --warning: #f59e0b; /* amber-500 */
+  --danger: #dc2626; /* red-600 */
+  color-scheme: light;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* warm dark stone, not near-black - black is reserved for small
+       details (text, thin borders), never a dominant surface/background */
+    --background: #1c1917; /* stone-900 */
+    --foreground: #f5f5f4; /* stone-100 */
+    /* orange-300: brighter than orange-400, still strong contrast both as
+       text on this dark background and as a button fill with dark text -
+       light-on-dark doesn't have the light-on-light problem light mode
+       does, so this can be used for text/links too, not just fills. */
+    --accent: #fdba74;
+    --accent-foreground: #1c1917;
+    --success: #4ade80; /* green-400 */
+    --warning: #fbbf24; /* amber-400 */
+    --danger: #f87171; /* red-400 */
+    color-scheme: dark;
   }
+}
+
+/* html, not just body: with color-scheme set, the browser paints its own
+   dark/light UA default canvas wherever html itself isn't explicitly
+   styled - that default is much darker than --background, so without this
+   the page reads as black around/behind anything body doesn't cover. */
+html {
+  background: var(--background);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
