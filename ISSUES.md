@@ -22,6 +22,7 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 - Double-booking prevention: Postgres exclusion constraint on table/time-range
 - Payments: Stripe
 - ML recommendations: deferred, but schema should accommodate `pgvector` for when it's built
+- Design/color palette: warm orange accent (brighter orange-500/orange-300, dark text on fill) + warm stone neutrals (never black/near-black as a background) + semantic status colors (success/warning/danger, not yet used) — see CLAUDE.md's Design conventions section
 
 ## Done
 
