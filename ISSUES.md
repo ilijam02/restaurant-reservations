@@ -29,7 +29,7 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 
 - [x] Auth: login/signup, role-based home pages (`/customer`, `/employee`, `/owner`)
 - [x] Owner: create a restaurant (name only) and see own restaurant list
-- [x] Customer/employee: browse the full restaurant list (name only, unranked, unsearchable)
+- [x] Customer/employee: browse and search (by name, client-side) the full restaurant list, unranked
 
 ## Backlog
 
@@ -40,7 +40,6 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 ### Customer
 
 - [ ] Rank browsed restaurants by ML recommendation algorithm (schema should accommodate pgvector; scoring itself is deferred)
-- [ ] Search for restaurants
 - [ ] View restaurants on a map
 - [ ] Make a reservation (time, party size; optional section/table selection)
 - [ ] Place an order alongside a reservation
@@ -52,7 +51,6 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 
 ### Employee
 
-- [ ] Search restaurants
 - [ ] Request to join a restaurant as staff
 - [ ] View customers' current reservations
 - [ ] Update the status of customers' reservations
