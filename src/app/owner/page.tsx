@@ -32,12 +32,20 @@ export default async function OwnerHomePage() {
                 className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3 dark:border-stone-700 dark:bg-stone-800"
               >
                 <span>{restaurant.name}</span>
-                <Link
-                  href={`/owner/restaurants/${restaurant.id}/edit`}
-                  className="text-sm font-medium text-orange-700 hover:underline dark:text-accent"
-                >
-                  Uredi
-                </Link>
+                <div className="flex shrink-0 items-center gap-3">
+                  <Link
+                    href={`/owner/restaurants/${restaurant.id}/edit`}
+                    className="text-sm font-medium text-orange-700 hover:underline dark:text-accent"
+                  >
+                    Uredi
+                  </Link>
+                  <Link
+                    href={`/owner/restaurants/${restaurant.id}/staff`}
+                    className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
+                  >
+                    Osoblje
+                  </Link>
+                </div>
               </li>
             ))}
           </ul>
