@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LogoutButton } from "@/components/logout-button";
 import { CreateRestaurantForm } from "@/components/create-restaurant-form";
 import { createClient } from "@/lib/supabase/server";
@@ -28,9 +29,15 @@ export default async function OwnerHomePage() {
             {restaurants.map((restaurant) => (
               <li
                 key={restaurant.id}
-                className="rounded-lg border border-stone-200 bg-white px-4 py-3 dark:border-stone-700 dark:bg-stone-800"
+                className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 bg-white px-4 py-3 dark:border-stone-700 dark:bg-stone-800"
               >
-                {restaurant.name}
+                <span>{restaurant.name}</span>
+                <Link
+                  href={`/owner/restaurants/${restaurant.id}/staff`}
+                  className="shrink-0 rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
+                >
+                  Osoblje
+                </Link>
               </li>
             ))}
           </ul>
