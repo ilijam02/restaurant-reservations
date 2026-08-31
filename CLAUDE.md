@@ -42,6 +42,7 @@ Not yet decided:
 - Login (`/login`) and signup (`/signup`) with email/password via Supabase Auth. Signup also collects first name, last name, phone, and role (customer/employee/owner), stored in a `profiles` table populated by a DB trigger (`supabase/migrations/`).
 - Role-based home pages (`/customer`, `/employee`, `/owner`) — title only + logout, gated by `src/proxy.ts` (Next.js 16 renamed `middleware` to `proxy` — see `AGENTS.md`).
 - All UI text is in Serbian.
+- `restaurants` table exists in the DB (`supabase/migrations/`) — schema only, no app code/UI yet. Minimal columns (`id`, `owner_id`, `name`, `created_at`); see the "Restaurants table" line under Decided in `ISSUES.md` for what's deliberately deferred.
 
 **Commands:** `npm run dev` / `npm run build` / `npm run lint` / `npm test`.
 

@@ -10,7 +10,6 @@ move it to Done with a short note).
 Take these to the design decisions chat when they come up next.
 
 - [ ] Maps provider: Mapbox vs Google Places
-- [ ] Restaurants table: core columns (name, address/location, hours, etc.) — initial cut, layout/sections can come later
 
 ## Decided
 
@@ -24,6 +23,7 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 - Payments: Stripe
 - ML recommendations: deferred, but schema should accommodate `pgvector` for when it's built
 - Design/color palette: warm orange accent (brighter orange-500/orange-300, dark text on fill) + warm stone neutrals (never black/near-black as a background) + semantic status colors (success/warning/danger, not yet used) — see CLAUDE.md's Design conventions section
+- Restaurants table: minimal initial cut (`id`, `owner_id`, `name`, `created_at` only) — no `image`/`address`/`hours`/`description` yet, added when the feature that needs each one is built, not speculatively now. An owner can have more than one restaurant (`owner_id` is a plain indexed FK, not unique). RLS restricts restaurant creation to `profiles.role = 'owner'` accounts. No sections/tables/layout yet — deferred until the reservation-layout feature is actually built.
 
 ## Done
 
