@@ -23,11 +23,13 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 - Payments: Stripe
 - ML recommendations: deferred, but schema should accommodate `pgvector` for when it's built
 - Design/color palette: warm orange accent (brighter orange-500/orange-300, dark text on fill) + warm stone neutrals (never black/near-black as a background) + semantic status colors (success/warning/danger, not yet used) — see CLAUDE.md's Design conventions section
-- Restaurants table: minimal initial cut (`id`, `owner_id`, `name`, `created_at` only) — no `image`/`address`/`hours`/`description` yet, added when the feature that needs each one is built, not speculatively now. An owner can have more than one restaurant (`owner_id` is a plain indexed FK, not unique). RLS restricts restaurant creation to `profiles.role = 'owner'` accounts. No sections/tables/layout yet — deferred until the reservation-layout feature is actually built.
+- Restaurants table: minimal initial cut (`id`, `owner_id`, `name`, `created_at` only) — no `image`/`address`/`hours`/`description` yet, added when the feature that needs each one is built, not speculatively now. An owner can have more than one restaurant (`owner_id` is a plain indexed FK, not unique). RLS restricts restaurant creation to `profiles.role = 'owner'` accounts, but restaurant rows are viewable by any authenticated user (any role) — needed so customers/employees can browse. No sections/tables/layout yet — deferred until the reservation-layout feature is actually built.
 
 ## Done
 
 - [x] Auth: login/signup, role-based home pages (`/customer`, `/employee`, `/owner`)
+- [x] Owner: create a restaurant (name only) and see own restaurant list
+- [x] Customer/employee: browse the full restaurant list (name only, unranked, unsearchable)
 
 ## Backlog
 
@@ -37,7 +39,7 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 
 ### Customer
 
-- [ ] Browse restaurants, ranked by ML recommendation algorithm (schema should accommodate pgvector; scoring itself is deferred)
+- [ ] Rank browsed restaurants by ML recommendation algorithm (schema should accommodate pgvector; scoring itself is deferred)
 - [ ] Search for restaurants
 - [ ] View restaurants on a map
 - [ ] Make a reservation (time, party size; optional section/table selection)
@@ -50,7 +52,7 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 
 ### Employee
 
-- [ ] Browse/search restaurants
+- [ ] Search restaurants
 - [ ] Request to join a restaurant as staff
 - [ ] View customers' current reservations
 - [ ] Update the status of customers' reservations
@@ -58,7 +60,7 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 ### Owner
 
 - [ ] Add/remove employees
-- [ ] Manage restaurant profile (image, name, hours, other attributes)
+- [ ] Manage restaurant profile (image, hours, other attributes; edit/delete)
 - [ ] Manage menu items (add/change/remove)
 - [ ] Manage restaurant sections
 - [ ] Create/edit the table layout
