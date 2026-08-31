@@ -31,3 +31,19 @@ jobs:
       # standalone `tsc --noEmit` can't see on a clean checkout), so there's
       # no separate typecheck step.
       - run: npm run build
+
+  db-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Spins up the full local stack (Postgres + Auth + ...) in Docker,
+      # applies supabase/migrations/, then runs the pgTAP suite in
+      # supabase/tests/ against it. Ephemeral: nothing here touches a real
+      # deployed database, and the container is discarded when the job ends.
+      - run: supabase start
+      - run: supabase test db
