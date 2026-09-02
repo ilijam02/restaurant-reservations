@@ -56,6 +56,7 @@ Not yet decided:
 - Reservations, orders, payments, and account deletion touch real user data and money — treat schema/API changes in these areas carefully and flag anything with financial or destructive implications (e.g. payment handling, cascading deletes) before implementing.
 - Keep the three roles' concerns separated (customer-facing, employee-facing, owner-facing) via clean top-level route-folder boundaries, even though they share one app and one backend — avoid leaking role-specific logic across those folders.
 - Do not create or merge pull requests without the user's explicit permission each time — committing to a branch and opening a PR for review is fine, but ask before opening it and before merging it.
+- Run the `code-reviewer` subagent (`.claude/agents/code-reviewer.md`) against the branch's diff before opening a PR, and address or consciously accept its findings first — it's a manual step, not CI-enforced, so it only helps if actually run.
 - Before changing any files for a task, create/checkout a dedicated feature branch first — never commit work directly on `main`. If the working tree already has unrelated uncommitted changes when starting (e.g. from a concurrent session in the same checkout), stash them (`git stash -u`) rather than letting them silently carry onto the new branch — otherwise they can end up committed into the wrong PR (this happened once: an in-progress dark-mode fix got swept into an unrelated `ISSUES.md` PR because it was still uncommitted when that branch was created off of it).
 
 ## Design conventions
