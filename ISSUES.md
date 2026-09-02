@@ -25,6 +25,7 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 - Design/color palette: warm orange accent (brighter orange-500/orange-300, dark text on fill) + warm stone neutrals (never black/near-black as a background) + semantic status colors (success/warning/danger, not yet used) — see CLAUDE.md's Design conventions section
 - Restaurants table: minimal initial cut (`id`, `owner_id`, `name`, `created_at` only) — no `image`/`address`/`hours`/`description` yet, added when the feature that needs each one is built, not speculatively now. An owner can have more than one restaurant (`owner_id` is a plain indexed FK, not unique). RLS restricts restaurant creation to `profiles.role = 'owner'` accounts, but restaurant rows are viewable by any authenticated user (any role) — needed so customers/employees can browse. No sections/tables/layout yet — deferred until the reservation-layout feature is actually built.
 - Employee applications/staff: single `restaurant_staff` table, one row per (restaurant, employee) pair with `status` = `pending` | `accepted`. No `rejected` status — a reject (owner) or cancel (employee) both just delete the pending row, and removing a staff member deletes the accepted row; this keeps the door open to re-apply later without extra status bookkeeping, and nothing in the product needs a record of past rejections. An employee can be staff at multiple restaurants (many rows). Owners manage this per restaurant at `/owner/restaurants/[id]/staff`. Added a narrow `profiles` RLS policy so owners can see the name of anyone with a staff row at one of their restaurants (previously profiles were self-view only).
+- Restaurant capacity/hours: `capacity` (nullable int, no cap by default) and `default_stay_minutes` (not null, defaults to 90) added directly to `restaurants`. Working hours are a separate `restaurant_hours` table, one row per day of week (`day_of_week` 0-6 matching Postgres's `extract(dow ...)`, open/close both null = closed that day), so the reservation feature can later join straight against a booking's date. Overnight hours (open past midnight) aren't cross-validated yet — deferred until a restaurant actually needs it. Owner edits all of this (name, capacity, default stay time, per-day hours with an "apply Monday to all" action) at `/owner/restaurants/[id]`.
 
 ## Done
 
@@ -33,6 +34,7 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 - [x] Customer/employee: browse and search (by name, client-side) the full restaurant list, unranked
 - [x] Employee: apply to a restaurant as staff, cancel a pending application
 - [x] Owner: view active applications and staff per restaurant, accept/reject applications, remove staff
+- [x] Owner: edit restaurant details (name, capacity, default stay time, per-day working hours)
 
 ## Backlog
 
@@ -59,7 +61,8 @@ Already settled in the design decisions chat, documented in full in `CLAUDE.md`.
 
 ### Owner
 
-- [ ] Manage restaurant profile (image, hours, other attributes; edit/delete)
+- [ ] Add restaurant image/description (remaining profile fields; name/capacity/hours already editable)
+- [ ] Delete a restaurant
 - [ ] Manage menu items (add/change/remove)
 - [ ] Manage restaurant sections
 - [ ] Create/edit the table layout
