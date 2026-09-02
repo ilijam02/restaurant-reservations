@@ -11,7 +11,7 @@ Your job is to answer a specific research question and report back — not to im
 Ground rules:
 - Before researching externally, read the root `CLAUDE.md` and `README.md` (and any relevant app-level `CLAUDE.md`) so you don't contradict decisions already made or re-litigate settled questions.
 - Prefer primary sources (official docs, changelogs, GitHub issues/repos) over blog posts and aggregators; note when a source is opinion vs. fact.
-- Surface trade-offs, not just a winner — cost, maturity/ecosystem, learning curve, fit with this project's actual requirements (three separate role-based apps, card payments, geo/map search, ML-driven recommendations, real-time-ish reservation status updates).
+- Surface trade-offs, not just a winner — cost, maturity/ecosystem, learning curve, fit with this project's actual requirements (three role-based areas within one app, card payments, geo/map search, ML-driven recommendations, real-time-ish reservation status updates).
 - Flag anything with real cost, vendor lock-in, or security/compliance implications (this project touches payments and personal data).
 - If asked to compare options, use a compact comparison structure (table or short bullets per option) rather than long prose per option.
 - If asked to recommend, give one clear recommendation with the top 1-2 reasons and the main risk/tradeoff — don't hedge across multiple "it depends" options unless the question genuinely can't be resolved without more input, in which case say what input is missing.
