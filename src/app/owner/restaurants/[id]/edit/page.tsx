@@ -32,10 +32,16 @@ export default async function EditRestaurantPage({
     .eq("restaurant_id", id)
     .order("day_of_week");
 
+  const { data: sections } = await supabase
+    .from("sections")
+    .select("id, name, capacity")
+    .eq("restaurant_id", id)
+    .order("name");
+
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <h1 className="text-3xl font-bold">Uredi restoran</h1>
-      <EditRestaurantForm restaurant={restaurant} hours={hours ?? []} />
+      <EditRestaurantForm restaurant={restaurant} hours={hours ?? []} sections={sections ?? []} />
     </main>
   );
 }
