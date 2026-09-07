@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { TablePicker, type PickableTable } from "@/components/table-picker";
 
 type Restaurant = {
   id: string;
@@ -11,8 +12,19 @@ type Restaurant = {
 };
 
 type HoursRow = { day_of_week: number; start_minute: number; end_minute: number };
-type SectionRow = { id: string; name: string };
-type TableRow = { id: string; name: string; seats: number; section_id: string | null };
+type SectionRow = { id: string; name: string; color_index: number };
+type LayoutRow = { id: string; name: string };
+type TableRow = {
+  id: string;
+  name: string;
+  seats: number;
+  section_id: string | null;
+  layout_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 const DAY_LABELS: Record<number, string> = {
   0: "Nedelja",
@@ -43,18 +55,20 @@ export function ReservationForm({
   restaurant,
   hours,
   sections,
+  layouts,
   tables,
 }: {
   restaurant: Restaurant;
   hours: HoursRow[];
   sections: SectionRow[];
+  layouts: LayoutRow[];
   tables: TableRow[];
 }) {
   const [startsAt, setStartsAt] = useState("");
   const [partySize, setPartySize] = useState("2");
   const [stayMinutes, setStayMinutes] = useState("");
   const [sectionId, setSectionId] = useState("");
-  const [tableId, setTableId] = useState("");
+  const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -69,19 +83,23 @@ export function ReservationForm({
     return map;
   }, [hours]);
 
-  const availableTables = tableId
-    ? tables
-    : sectionId
-      ? tables.filter((t) => t.section_id === sectionId)
-      : tables;
-
-  function handleSectionChange(value: string) {
-    setSectionId(value);
-    if (tableId) {
-      const stillValid = tables.find((t) => t.id === tableId)?.section_id === value;
-      if (!stillValid) setTableId("");
-    }
-  }
+  const sectionColorBySectionId = useMemo(() => new Map(sections.map((s) => [s.id, s.color_index])), [sections]);
+  const pickableTables: PickableTable[] = useMemo(
+    () =>
+      tables.map((t) => ({
+        id: t.id,
+        name: t.name,
+        seats: t.seats,
+        sectionId: t.section_id,
+        sectionColorIndex: t.section_id ? (sectionColorBySectionId.get(t.section_id) ?? null) : null,
+        layoutId: t.layout_id,
+        x: t.x,
+        y: t.y,
+        width: t.width,
+        height: t.height,
+      })),
+    [tables, sectionColorBySectionId],
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -90,29 +108,53 @@ export function ReservationForm({
     setLoading(true);
 
     const supabase = createClient();
+    const hasTables = selectedTableIds.length > 0;
     const { data, error: rpcError } = await supabase.rpc("create_reservation", {
       p_restaurant_id: restaurant.id,
       p_party_size: Number(partySize),
       p_starts_at: new Date(startsAt).toISOString(),
       p_stay_minutes: stayMinutes ? Number(stayMinutes) : null,
-      p_section_id: tableId ? null : sectionId || null,
-      p_table_id: tableId || null,
+      p_section_id: hasTables ? null : sectionId || null,
+      p_table_ids: hasTables ? selectedTableIds : null,
     });
 
-    setLoading(false);
     if (rpcError || !data) {
+      setLoading(false);
       setError(rpcError?.message ?? "Rezervacija nije uspela. Pokušajte ponovo.");
       return;
     }
 
+    // Auto-assignment means the customer doesn't necessarily know what they
+    // got - look up what was actually assigned so the confirmation isn't
+    // silent about it.
+    let assignedText = "";
+    const { data: assignedTables } = await supabase
+      .from("reservation_tables")
+      .select("tables(name)")
+      .eq("reservation_id", data.id);
+    if (assignedTables && assignedTables.length > 0) {
+      const names = assignedTables.map((row) => (row.tables as unknown as { name: string }).name);
+      assignedText = ` Sto: ${names.join(", ")}.`;
+    } else {
+      const { data: assignedSections } = await supabase
+        .from("reservation_sections")
+        .select("sections(name)")
+        .eq("reservation_id", data.id);
+      if (assignedSections && assignedSections.length > 0) {
+        const names = assignedSections.map((row) => (row.sections as unknown as { name: string }).name);
+        assignedText = ` Sekcija: ${names.join(", ")}.`;
+      }
+    }
+
+    setLoading(false);
     const confirmedAt = new Date(data.starts_at);
     setConfirmation(
-      `Potvrđeno: rezervacija za ${confirmedAt.toLocaleDateString("sr-RS")} u ${confirmedAt.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.`,
+      `Potvrđeno: rezervacija za ${confirmedAt.toLocaleDateString("sr-RS")} u ${confirmedAt.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.${assignedText}`,
     );
     setStartsAt("");
     setStayMinutes("");
     setSectionId("");
-    setTableId("");
+    setSelectedTableIds([]);
   }
 
   return (
@@ -184,12 +226,12 @@ export function ReservationForm({
             <input
               id="stay-minutes"
               type="number"
-              min={1}
               placeholder={restaurant.default_stay_minutes.toString()}
               value={stayMinutes}
               onChange={(event) => setStayMinutes(event.target.value)}
               className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
             />
+            <p className="text-xs text-stone-500 dark:text-stone-400">Između 30 i 180 minuta.</p>
           </div>
         </div>
 
@@ -201,8 +243,9 @@ export function ReservationForm({
             <select
               id="section"
               value={sectionId}
-              onChange={(event) => handleSectionChange(event.target.value)}
-              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
+              onChange={(event) => setSectionId(event.target.value)}
+              disabled={selectedTableIds.length > 0}
+              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent disabled:opacity-50 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
             >
               <option value="">Bez preference</option>
               {sections.map((s) => (
@@ -214,24 +257,15 @@ export function ReservationForm({
           </div>
         )}
 
-        {tables.length > 0 && (
+        {pickableTables.length > 0 && (
           <div className="space-y-1">
-            <label htmlFor="table" className="block text-sm font-medium">
-              Sto (opciono)
-            </label>
-            <select
-              id="table"
-              value={tableId}
-              onChange={(event) => setTableId(event.target.value)}
-              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
-            >
-              <option value="">Bez preference</option>
-              {availableTables.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} (mesta: {t.seats})
-                </option>
-              ))}
-            </select>
+            <span className="block text-sm font-medium">Sto (opciono)</span>
+            <TablePicker
+              tables={pickableTables}
+              layouts={layouts}
+              value={selectedTableIds}
+              onChange={setSelectedTableIds}
+            />
           </div>
         )}
 

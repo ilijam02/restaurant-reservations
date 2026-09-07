@@ -28,15 +28,22 @@ export default async function CustomerRestaurantPage({
 
   const { data: sections } = await supabase
     .from("sections")
+    .select("id, name, color_index")
+    .eq("restaurant_id", id)
+    .order("name");
+
+  const { data: layouts } = await supabase
+    .from("layouts")
     .select("id, name")
     .eq("restaurant_id", id)
+    .eq("is_active", true)
     .order("name");
 
   // Only tables on a currently-active layout are actually bookable -
   // create_reservation() enforces the same rule server-side.
   const { data: tables } = await supabase
     .from("tables")
-    .select("id, name, seats, section_id, layouts!inner(is_active)")
+    .select("id, name, seats, section_id, layout_id, x, y, width, height, layouts!inner(is_active)")
     .eq("restaurant_id", id)
     .eq("layouts.is_active", true)
     .order("name");
@@ -48,6 +55,7 @@ export default async function CustomerRestaurantPage({
         restaurant={restaurant}
         hours={hours ?? []}
         sections={sections ?? []}
+        layouts={layouts ?? []}
         tables={tables ?? []}
       />
     </main>
