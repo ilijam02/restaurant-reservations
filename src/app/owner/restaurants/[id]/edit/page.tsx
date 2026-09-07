@@ -15,7 +15,7 @@ export default async function EditRestaurantPage({
 
   const { data: restaurant } = await supabase
     .from("restaurants")
-    .select("id, name, capacity, default_stay_minutes, owner_id")
+    .select("id, name, capacity, default_stay_minutes, owner_id, current_layout_id")
     .eq("id", id)
     .single();
 
@@ -34,14 +34,33 @@ export default async function EditRestaurantPage({
 
   const { data: sections } = await supabase
     .from("sections")
-    .select("id, name, capacity")
+    .select("id, name, capacity, color_index")
     .eq("restaurant_id", id)
     .order("name");
+
+  const { data: layouts } = await supabase
+    .from("layouts")
+    .select("id, name")
+    .eq("restaurant_id", id)
+    .order("name");
+
+  // Only the current layout's tables matter here (capacity/section-delete
+  // guard) - other, non-current layouts are drafts that don't affect
+  // anything live.
+  const { data: tables } = restaurant.current_layout_id
+    ? await supabase.from("tables").select("id, section_id").eq("layout_id", restaurant.current_layout_id)
+    : { data: [] };
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <h1 className="text-3xl font-bold">Uredi restoran</h1>
-      <EditRestaurantForm restaurant={restaurant} hours={hours ?? []} sections={sections ?? []} />
+      <EditRestaurantForm
+        restaurant={restaurant}
+        hours={hours ?? []}
+        sections={sections ?? []}
+        tables={tables ?? []}
+        layouts={layouts ?? []}
+      />
     </main>
   );
 }
