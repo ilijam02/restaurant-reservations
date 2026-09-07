@@ -34,14 +34,35 @@ export default async function EditRestaurantPage({
 
   const { data: sections } = await supabase
     .from("sections")
-    .select("id, name, capacity")
+    .select("id, name, capacity, color_index")
+    .eq("restaurant_id", id)
+    .order("name");
+
+  const { data: layouts } = await supabase
+    .from("layouts")
+    .select("id, name, is_active")
+    .eq("restaurant_id", id)
+    .order("name");
+
+  // Every layout's tables, not just the one open on the canvas - editing
+  // happens inline for whichever layout the owner has selected in the
+  // dropdown.
+  const { data: tables } = await supabase
+    .from("tables")
+    .select("id, layout_id, name, seats, section_id, x, y, width, height")
     .eq("restaurant_id", id)
     .order("name");
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <h1 className="text-3xl font-bold">Uredi restoran</h1>
-      <EditRestaurantForm restaurant={restaurant} hours={hours ?? []} sections={sections ?? []} />
+      <EditRestaurantForm
+        restaurant={restaurant}
+        hours={hours ?? []}
+        sections={sections ?? []}
+        layouts={layouts ?? []}
+        tables={tables ?? []}
+      />
     </main>
   );
 }
