@@ -1,4 +1,4 @@
-// A fixed 32-color palette for tinting sections on the table layout canvas.
+// A fixed 8-color palette for tinting sections on the table layout canvas.
 // Only the index into this array is ever stored (sections.color_index) -
 // the actual hues live entirely here, so they can be retuned without a
 // data migration.
@@ -12,7 +12,7 @@
 // ~142deg - see globals.css) so a section's color never gets confused with
 // the brand accent or a reservation/order status, including the green/red
 // availability border planned for tables later.
-const SECTION_COLOR_COUNT = 32;
+const SECTION_COLOR_COUNT = 8;
 const GOLDEN_RATIO_CONJUGATE = 0.6180339887498949;
 const HUE_BANDS: readonly [start: number, end: number][] = [
   [50, 110],
@@ -31,8 +31,15 @@ function hueForIndex(index: number): number {
 }
 
 export function sectionColor(index: number): string {
-  const hue = hueForIndex(((index % SECTION_COLOR_COUNT) + SECTION_COLOR_COUNT) % SECTION_COLOR_COUNT);
-  return `hsl(${hue.toFixed(1)} 60% 55%)`;
+  const wrapped = ((index % SECTION_COLOR_COUNT) + SECTION_COLOR_COUNT) % SECTION_COLOR_COUNT;
+  const hue = hueForIndex(wrapped);
+  // Indices 4-6 sit close in hue to one of 0-3 (the golden-angle sequence
+  // naturally bisects the gaps left by the first few picks) - bumped
+  // saturation/lightness makes them read as a clearly different, bolder
+  // family of color instead of a washed-out near-duplicate, without
+  // touching the hues themselves (0-3 and 7 already read as distinct).
+  const [saturation, lightness] = wrapped >= 4 && wrapped <= 6 ? [85, 65] : [60, 55];
+  return `hsl(${hue.toFixed(1)} ${saturation}% ${lightness}%)`;
 }
 
 // Picks the least-used color index among `counts` (one entry per palette

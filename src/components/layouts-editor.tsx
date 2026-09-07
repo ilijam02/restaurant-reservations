@@ -1,111 +1,98 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
-export type LayoutOption = { id: string; name: string };
-
-const DUPLICATE_NAME_ERROR = "Raspored sa ovim nazivom već postoji.";
-const CREATE_ERROR = "Kreiranje rasporeda nije uspelo. Pokušajte ponovo.";
-const DELETE_ERROR = "Brisanje rasporeda nije uspelo. Pokušajte ponovo.";
+// An existing layout's key is its own id (stable, no lookup needed to
+// cross-reference); a new, not-yet-saved layout gets a random key until
+// it's actually inserted. isActive is independent of which layout is
+// currently open on the canvas (editingKey) - a restaurant can have
+// several active layouts at once (e.g. one per floor), all contributing to
+// capacity, while only one has its canvas open at a time.
+export type DraftLayout = { key: string; id: string | null; name: string; isActive: boolean };
 
 export function LayoutsEditor({
-  restaurantId,
   value,
   onChange,
-  currentId,
-  onCurrentIdChange,
+  editingKey,
+  onEditingKeyChange,
 }: {
-  restaurantId: string;
-  value: LayoutOption[];
-  onChange: (next: LayoutOption[]) => void;
-  currentId: string | null;
-  onCurrentIdChange: (id: string | null) => void;
+  value: DraftLayout[];
+  onChange: (next: DraftLayout[]) => void;
+  editingKey: string | null;
+  onEditingKeyChange: (key: string | null) => void;
 }) {
   const [newName, setNewName] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // A layout is created immediately (not staged with the rest of the
-  // form) specifically so its "Uredi raspored" link works right away -
-  // editing a layout's tables needs a real, saved layout to point at, and
-  // waiting for the owner to also save name/hours/sections first would
-  // block that. Choosing which layout is current still stays staged.
-  async function addLayout() {
+  const activeNames = value.filter((l) => l.isActive).map((l) => l.name);
+  const editingLayout = value.find((l) => l.key === editingKey) ?? null;
+
+  function addLayout() {
     const name = newName.trim();
     if (!name) return;
-    setError(null);
-    setCreating(true);
-
-    const supabase = createClient();
-    const { data, error: insertError } = await supabase
-      .from("layouts")
-      .insert({ restaurant_id: restaurantId, name })
-      .select("id, name")
-      .single();
-
-    setCreating(false);
-    if (insertError || !data) {
-      setError(insertError?.code === "23505" ? DUPLICATE_NAME_ERROR : CREATE_ERROR);
-      return;
-    }
-
-    onChange([...value, data]);
-    onCurrentIdChange(data.id);
+    // Defaults to inactive - activating is a deliberate choice, but it's
+    // still opened on the canvas right away so tables can be added to it
+    // immediately.
+    const layout: DraftLayout = { key: crypto.randomUUID(), id: null, name, isActive: false };
+    onChange([...value, layout]);
+    onEditingKeyChange(layout.key);
     setNewName("");
   }
 
-  async function deleteCurrent() {
-    if (!currentId) return;
-    setError(null);
-    setDeleting(true);
+  function removeCurrent() {
+    if (!editingKey) return;
+    const next = value.filter((l) => l.key !== editingKey);
+    onChange(next);
+    onEditingKeyChange(next[0]?.key ?? null);
+  }
 
-    const supabase = createClient();
-    const { error: deleteError } = await supabase.from("layouts").delete().eq("id", currentId);
-
-    setDeleting(false);
-    if (deleteError) {
-      setError(DELETE_ERROR);
-      return;
-    }
-
-    onChange(value.filter((l) => l.id !== currentId));
-    onCurrentIdChange(null);
+  function toggleActive() {
+    if (!editingKey) return;
+    onChange(value.map((l) => (l.key === editingKey ? { ...l, isActive: !l.isActive } : l)));
   }
 
   return (
     <div className="space-y-2">
+      <p className="text-sm text-stone-600 dark:text-stone-400">
+        Aktivni rasporedi: {activeNames.length > 0 ? activeNames.join(", ") : "nijedan"}
+      </p>
       {value.length === 0 ? (
         <p className="text-sm text-stone-600 dark:text-stone-400">Nema još rasporeda.</p>
       ) : (
         <div className="flex gap-2">
-          <label htmlFor="current-layout" className="sr-only">
-            Trenutni raspored
+          <label htmlFor="editing-layout" className="sr-only">
+            Raspored za uređivanje
           </label>
           <select
-            id="current-layout"
-            value={currentId ?? ""}
-            onChange={(event) => onCurrentIdChange(event.target.value)}
+            id="editing-layout"
+            value={editingKey ?? ""}
+            onChange={(event) => onEditingKeyChange(event.target.value)}
             className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
           >
             <option value="" disabled>
               Izaberi raspored
             </option>
             {value.map((layout) => (
-              <option key={layout.id} value={layout.id}>
+              <option key={layout.key} value={layout.key}>
                 {layout.name}
               </option>
             ))}
           </select>
-          {currentId && (
+          {editingLayout && (
             <button
               type="button"
-              onClick={deleteCurrent}
-              disabled={deleting}
-              className="shrink-0 rounded-md border border-stone-300 px-3 py-1 text-sm text-red-600 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-600 dark:text-red-400 dark:hover:bg-stone-700"
+              onClick={toggleActive}
+              className="shrink-0 rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
             >
-              {deleting ? "Brisanje..." : "Obriši raspored"}
+              {editingLayout.isActive ? "Deaktiviraj" : "Aktiviraj"}
+            </button>
+          )}
+          {editingKey && (
+            <button
+              type="button"
+              onClick={removeCurrent}
+              className="shrink-0 rounded-md border border-stone-300 px-3 py-1 text-sm text-red-600 hover:bg-stone-100 dark:border-stone-600 dark:text-red-400 dark:hover:bg-stone-700"
+            >
+              Obriši raspored
             </button>
           )}
         </div>
@@ -124,17 +111,11 @@ export function LayoutsEditor({
         <button
           type="button"
           onClick={addLayout}
-          disabled={creating}
-          className="shrink-0 rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-600 dark:hover:bg-stone-700"
+          className="shrink-0 rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
         >
-          {creating ? "Dodavanje..." : "Dodaj raspored"}
+          Dodaj raspored
         </button>
       </div>
-      {error && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

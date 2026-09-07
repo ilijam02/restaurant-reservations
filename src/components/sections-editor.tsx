@@ -10,12 +10,18 @@ export function SectionsEditor({
   value,
   onChange,
   capacityReadOnly,
+  liveCapacities,
 }: {
   value: DraftSection[];
   onChange: (next: DraftSection[]) => void;
-  // Once a table layout exists, capacity is owned by the layout page
-  // (derived from tables) - this form only edits name here.
+  // Once a layout is current, capacity is derived from its tables (edited
+  // right below on the same page) rather than typed here.
   capacityReadOnly: boolean;
+  // Live sums (by section key) computed from the current layout's draft
+  // tables - always up to date as tables are added/moved/reassigned,
+  // without needing anything saved first. Only meaningful when
+  // capacityReadOnly is true.
+  liveCapacities?: Map<string, number>;
 }) {
   function updateSection(key: string, patch: Partial<DraftSection>) {
     onChange(value.map((section) => (section.key === key ? { ...section, ...patch } : section)));
@@ -59,7 +65,7 @@ export function SectionsEditor({
                   title="Kapacitet se izračunava iz rasporeda stolova"
                   className="w-28 shrink-0 rounded-md border border-stone-300 bg-stone-100 px-3 py-2 text-base text-stone-600 dark:border-stone-600 dark:bg-stone-700 dark:text-stone-400"
                 >
-                  {section.capacity}
+                  {liveCapacities?.get(section.key) ?? 0}
                 </span>
               ) : (
                 <>

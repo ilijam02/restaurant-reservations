@@ -15,7 +15,7 @@ export default async function EditRestaurantPage({
 
   const { data: restaurant } = await supabase
     .from("restaurants")
-    .select("id, name, capacity, default_stay_minutes, owner_id, current_layout_id")
+    .select("id, name, capacity, default_stay_minutes, owner_id")
     .eq("id", id)
     .single();
 
@@ -40,16 +40,18 @@ export default async function EditRestaurantPage({
 
   const { data: layouts } = await supabase
     .from("layouts")
-    .select("id, name")
+    .select("id, name, is_active")
     .eq("restaurant_id", id)
     .order("name");
 
-  // Only the current layout's tables matter here (capacity/section-delete
-  // guard) - other, non-current layouts are drafts that don't affect
-  // anything live.
-  const { data: tables } = restaurant.current_layout_id
-    ? await supabase.from("tables").select("id, section_id").eq("layout_id", restaurant.current_layout_id)
-    : { data: [] };
+  // Every layout's tables, not just the one open on the canvas - editing
+  // happens inline for whichever layout the owner has selected in the
+  // dropdown.
+  const { data: tables } = await supabase
+    .from("tables")
+    .select("id, layout_id, name, seats, section_id, x, y, width, height")
+    .eq("restaurant_id", id)
+    .order("name");
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
@@ -58,8 +60,8 @@ export default async function EditRestaurantPage({
         restaurant={restaurant}
         hours={hours ?? []}
         sections={sections ?? []}
-        tables={tables ?? []}
         layouts={layouts ?? []}
+        tables={tables ?? []}
       />
     </main>
   );
