@@ -43,6 +43,7 @@ const SECTIONS_SAVE_ERROR = "Čuvanje sekcija nije uspelo. Pokušajte ponovo.";
 const SECTION_HAS_TABLES_ERROR =
   "Ne možete obrisati sekciju dok joj je dodeljen sto u aktivnom rasporedu - prvo promenite ili uklonite te stolove.";
 const LAYOUT_MISSING_SECTION_ERROR = "Svi stolovi u aktivnim rasporedima moraju imati sekciju.";
+const DEFAULT_STAY_MINUTES_RANGE_ERROR = "Trajanje rezervacije mora biti između 30 i 180 minuta.";
 const SAVE_ERROR = "Čuvanje izmena nije uspelo. Pokušajte ponovo.";
 
 function initialBlocks(hours: HoursRow[]): HourBlock[] {
@@ -280,7 +281,7 @@ export function EditRestaurantForm({
 
     if (restaurantError) {
       setLoading(false);
-      setError(SAVE_ERROR);
+      setError(restaurantError.code === "23514" ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
       return;
     }
 
@@ -537,6 +538,13 @@ export function EditRestaurantForm({
           onChange={(event) => setDefaultStayMinutes(event.target.value)}
           className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
         />
+        {/* No native max - browsers block submission with an unlocalized
+            message before this form's own Serbian error can show (see
+            DEFAULT_STAY_MINUTES_RANGE_ERROR above). Every actual
+            reservation ends up bound to 30-180 minutes regardless, since
+            this value is only ever a fallback when a customer leaves
+            "Trajanje" blank. */}
+        <p className="text-xs text-stone-500 dark:text-stone-400">Između 30 i 180 minuta.</p>
       </div>
 
       <div className="space-y-2">

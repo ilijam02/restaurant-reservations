@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 type Restaurant = { id: string; name: string };
 
@@ -31,11 +32,13 @@ export function RestaurantBrowser({ restaurants }: { restaurants: Restaurant[] }
       ) : (
         <ul className="space-y-2">
           {filtered.map((restaurant) => (
-            <li
-              key={restaurant.id}
-              className="rounded-lg border border-stone-200 bg-white px-4 py-3 dark:border-stone-700 dark:bg-stone-800"
-            >
-              {restaurant.name}
+            <li key={restaurant.id}>
+              <Link
+                href={`/customer/restaurants/${restaurant.id}`}
+                className="block rounded-lg border border-stone-200 bg-white px-4 py-3 hover:border-accent dark:border-stone-700 dark:bg-stone-800"
+              >
+                {restaurant.name}
+              </Link>
             </li>
           ))}
         </ul>

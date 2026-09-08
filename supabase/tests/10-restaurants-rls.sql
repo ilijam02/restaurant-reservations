@@ -1,7 +1,7 @@
 -- RLS coverage for public.restaurants (see supabase/migrations/20260831075904_create_restaurants.sql
 -- and .../20260831120000_restaurants_public_select.sql for the policies under test).
 begin;
-select plan(10);
+select plan(11);
 
 select tests.rls_enabled('public', 'restaurants');
 
@@ -25,6 +25,19 @@ select tests.authenticate_as('owner_b');
 select lives_ok(
   $$insert into public.restaurants (owner_id, name) values (tests.get_supabase_uid('owner_b'), 'B''s Diner')$$,
   'owner_b can create a restaurant they own'
+);
+
+-- default_stay_minutes must be within create_reservation()'s own 30-180
+-- minute duration bound (see .../20260908170000_restaurants_default_stay_minutes_bounds.sql) -
+-- it's the fallback used whenever a customer leaves a reservation's
+-- duration unspecified, so an out-of-range default would make that
+-- fallback permanently rejected.
+select tests.authenticate_as('owner_a');
+select throws_ok(
+  $$update public.restaurants set default_stay_minutes = 200 where name = 'A''s Bistro'$$,
+  '23514',
+  null,
+  'default_stay_minutes above 180 is rejected'
 );
 
 -- Non-owner-role accounts cannot create a restaurant at all.
