@@ -55,11 +55,20 @@ insert into public.tables (restaurant_id, layout_id, section_id, name, seats, x,
     'Sto Veliki', 6, 4, 0, 2, 2
   );
 -- employee_1 is accepted staff (can see A's Bistro's reservations),
--- employee_2 is still pending (cannot).
-insert into public.restaurant_staff (restaurant_id, employee_id, status)
-  values ((select id from public.restaurants where name = 'A''s Bistro'), tests.get_supabase_uid('employee_1'), 'accepted');
-insert into public.restaurant_staff (restaurant_id, employee_id, status)
-  values ((select id from public.restaurants where name = 'A''s Bistro'), tests.get_supabase_uid('employee_2'), 'pending');
+-- employee_2 is still pending (cannot). restaurant_staff has no
+-- owner-side "insert directly as accepted" policy - only "employee
+-- applies pending, owner updates to accepted" (see
+-- 20260831150000_restaurant_staff.sql), so mirror that real flow here.
+select tests.authenticate_as('employee_1');
+insert into public.restaurant_staff (restaurant_id, employee_id)
+  values ((select id from public.restaurants where name = 'A''s Bistro'), tests.get_supabase_uid('employee_1'));
+select tests.authenticate_as('employee_2');
+insert into public.restaurant_staff (restaurant_id, employee_id)
+  values ((select id from public.restaurants where name = 'A''s Bistro'), tests.get_supabase_uid('employee_2'));
+select tests.authenticate_as('owner_a');
+update public.restaurant_staff set status = 'accepted'
+  where restaurant_id = (select id from public.restaurants where name = 'A''s Bistro')
+    and employee_id = tests.get_supabase_uid('employee_1');
 
 -- tables(layout_id, name) uniqueness (see
 -- tables_layout_name_unique.sql): two tables in the same layout can't share
@@ -85,8 +94,13 @@ insert into public.sections (restaurant_id, name, capacity, color_index)
   values ((select id from public.restaurants where name = 'C''s Cafe'), 'Unutra', 4, 0);
 insert into public.sections (restaurant_id, name, capacity, color_index)
   values ((select id from public.restaurants where name = 'C''s Cafe'), 'Basta', 3, 1);
-insert into public.restaurant_staff (restaurant_id, employee_id, status)
-  values ((select id from public.restaurants where name = 'C''s Cafe'), tests.get_supabase_uid('employee_1'), 'accepted');
+select tests.authenticate_as('employee_1');
+insert into public.restaurant_staff (restaurant_id, employee_id)
+  values ((select id from public.restaurants where name = 'C''s Cafe'), tests.get_supabase_uid('employee_1'));
+select tests.authenticate_as('owner_a');
+update public.restaurant_staff set status = 'accepted'
+  where restaurant_id = (select id from public.restaurants where name = 'C''s Cafe')
+    and employee_id = tests.get_supabase_uid('employee_1');
 
 -- Setup: D's Grill - neither sections nor a layout, plain capacity.
 insert into public.restaurants (owner_id, name, capacity) values (tests.get_supabase_uid('owner_a'), 'D''s Grill', 4);
@@ -472,8 +486,8 @@ select tests.authenticate_as('employee_1');
 select results_eq(
   $$select count(*)::int from public.reservation_sections rs
     where rs.section_id = (select id from public.sections where name = 'Unutra')$$,
-  ARRAY[1],
-  'an accepted staff member can see the reservation_sections row'
+  ARRAY[2],
+  'an accepted staff member can see both reservation_sections rows for that section (the customer-scoped policy above only shows one customer''s own row - staff visibility is restaurant-wide, and Unutra was used by both the auto-split and the spillover booking)'
 );
 
 -- === D's Grill: original plain-capacity baseline, unchanged ===
@@ -546,6 +560,16 @@ select throws_ok(
 -- each row was checked in isolation), even though there was no actual
 -- closed period there - see the multirange rewrite in
 -- 20260908130000_create_reservations.sql.
+--
+-- Unlike every other fixture in this file, E's Diner is NOT open 24/7, so
+-- (unlike them) it's actually sensitive to create_reservation()'s UTC ->
+-- Europe/Belgrade conversion: plain `date_trunc('day', now()) + interval
+-- '...'` builds a UTC instant, and while Belgrade is in DST that lands 2
+-- hours later than intended once the function converts it - e.g. an
+-- intended "10:30" instant actually arrives as "12:30" local, squarely in
+-- the closed 12:30-13:00 gap instead of the open seam this test means to
+-- exercise. Building explicitly from Belgrade's own wall-clock "today"
+-- avoids that.
 select tests.authenticate_as('owner_a');
 insert into public.restaurants (owner_id, name, capacity) values (tests.get_supabase_uid('owner_a'), 'E''s Diner', 10);
 insert into public.restaurant_hours (restaurant_id, day_of_week, start_minute, end_minute)
@@ -558,7 +582,7 @@ select lives_ok(
   $$select public.create_reservation(
       (select id from public.restaurants where name = 'E''s Diner'),
       2,
-      (date_trunc('day', now()) + interval '1 day 10 hours 30 minutes'),
+      ((((now() at time zone 'Europe/Belgrade')::date + 1) + interval '10 hours 30 minutes') at time zone 'Europe/Belgrade'),
       90
     )$$,
   'a reservation spanning the seam between two back-to-back hours blocks (11:00) is accepted, not rejected as spanning a gap'
@@ -568,7 +592,7 @@ select throws_ok(
   $$select public.create_reservation(
       (select id from public.restaurants where name = 'E''s Diner'),
       2,
-      (date_trunc('day', now()) + interval '1 day 12 hours 40 minutes'),
+      ((((now() at time zone 'Europe/Belgrade')::date + 1) + interval '12 hours 40 minutes') at time zone 'Europe/Belgrade'),
       30
     )$$,
   'P0001',
