@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { RestaurantHoursCalendar, type HourBlock } from "@/components/restaurant-hours-calendar";
@@ -616,21 +615,13 @@ export function EditRestaurantForm({
         </p>
       )}
 
-      <div className="flex items-center gap-4">
-        <button
-          type="submit"
-          disabled={loading}
-          className="flex-1 rounded-md bg-accent px-3 py-2 text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
-        >
-          {loading ? "Čuvanje..." : "Sačuvaj izmene"}
-        </button>
-        <Link
-          href="/owner"
-          className="text-sm font-medium text-stone-600 hover:underline dark:text-stone-400"
-        >
-          Nazad
-        </Link>
-      </div>
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full rounded-md bg-accent px-3 py-2 text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
+      >
+        {loading ? "Čuvanje..." : "Sačuvaj izmene"}
+      </button>
     </form>
   );
 }
