@@ -250,8 +250,8 @@ declare
   v_restaurant public.restaurants;
   v_starts_local timestamp;
   v_ends_local timestamp;
-  v_start_minute integer;
-  v_end_minute integer;
+  v_start_date date;
+  v_open tsmultirange;
   v_capacity integer;
   v_booked integer;
   v_reservation_id uuid;
@@ -300,39 +300,35 @@ begin
   -- (and potentially the wrong calendar day) for this single-locale app.
   v_starts_local := p_starts_at at time zone 'Europe/Belgrade';
   v_ends_local := v_ends_at at time zone 'Europe/Belgrade';
+  v_start_date := v_starts_local::date;
 
-  v_start_minute := extract(hour from v_starts_local)::int * 60 + extract(minute from v_starts_local)::int;
-  v_end_minute := extract(hour from v_ends_local)::int * 60 + extract(minute from v_ends_local)::int;
+  -- Built as a multirange, anchored to real calendar timestamps, rather
+  -- than checking whether a single restaurant_hours row contains the whole
+  -- reservation - a multirange automatically merges touching/overlapping
+  -- segments (range_agg()'s normalization), so two back-to-back blocks
+  -- like "05:00-05:30" and "05:30-07:00" (or an overnight block split
+  -- across two day_of_week rows at the 1440/0 boundary) are correctly
+  -- treated as one continuous open period. A reservation spanning across
+  -- such a seam was previously rejected, since neither row alone contained
+  -- it. Only the start day and the day after can matter, since a
+  -- reservation is at most 3 hours (the duration cap enforced above).
+  select range_agg(seg) into v_open
+  from (
+    select tsrange(
+      d.day_date + (rh.start_minute || ' minutes')::interval,
+      case when rh.end_minute = 1440 then d.day_date + interval '1 day'
+           else d.day_date + (rh.end_minute || ' minutes')::interval end,
+      '[)'
+    ) as seg
+    from (
+      values (v_start_date, extract(dow from v_start_date)::int),
+             (v_start_date + 1, mod(extract(dow from v_start_date)::int + 1, 7))
+    ) as d(day_date, dow)
+    join public.restaurant_hours rh on rh.restaurant_id = p_restaurant_id and rh.day_of_week = d.dow
+  ) segs;
 
-  if v_ends_local::date = v_starts_local::date then
-    if not exists (
-      select 1 from public.restaurant_hours
-      where restaurant_id = p_restaurant_id
-        and day_of_week = extract(dow from v_starts_local)
-        and start_minute <= v_start_minute
-        and end_minute >= v_end_minute
-    ) then
-      raise exception 'Restoran je zatvoren u izabrano vreme.';
-    end if;
-  else
-    -- Crosses midnight: the same split-at-midnight representation the
-    -- owner-side calendar already produces (start's day reaching to 1440,
-    -- the next day_of_week starting at 0) must cover both halves.
-    if not exists (
-      select 1 from public.restaurant_hours
-      where restaurant_id = p_restaurant_id
-        and day_of_week = extract(dow from v_starts_local)
-        and start_minute <= v_start_minute
-        and end_minute = 1440
-    ) or not exists (
-      select 1 from public.restaurant_hours
-      where restaurant_id = p_restaurant_id
-        and day_of_week = mod(extract(dow from v_starts_local)::int + 1, 7)
-        and start_minute = 0
-        and end_minute >= v_end_minute
-    ) then
-      raise exception 'Restoran je zatvoren u izabrano vreme.';
-    end if;
+  if v_open is null or not (tsrange(v_starts_local, v_ends_local, '[)') <@ v_open) then
+    raise exception 'Restoran je zatvoren u izabrano vreme.';
   end if;
 
   if p_table_ids is not null and cardinality(p_table_ids) > 0 then

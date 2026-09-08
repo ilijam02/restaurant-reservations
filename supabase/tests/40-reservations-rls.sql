@@ -10,7 +10,7 @@
 -- hours-crossing logic - that's covered by manual browser verification
 -- instead.
 begin;
-select plan(38);
+select plan(40);
 
 select tests.rls_enabled('public', 'reservations');
 select tests.rls_enabled('public', 'reservation_tables');
@@ -471,6 +471,45 @@ select throws_ok(
   'P0001',
   'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: 0).',
   'a party exceeding the restaurant''s remaining plain capacity is rejected, reporting how much room is actually left'
+);
+
+-- === E's Diner: hours-touching regression ===
+-- Two back-to-back blocks with no actual gap between them
+-- (10:00-11:00, 11:00-12:30), a real gap (12:30-13:00), then another block
+-- (13:00-14:00) - every day, so this doesn't depend on which day of the
+-- week "now() + 1 day" happens to be. A reservation used to be rejected if
+-- it spanned the seam between two touching restaurant_hours rows (since
+-- each row was checked in isolation), even though there was no actual
+-- closed period there - see the multirange rewrite in
+-- 20260908130000_create_reservations.sql.
+select tests.authenticate_as('owner_a');
+insert into public.restaurants (owner_id, name, capacity) values (tests.get_supabase_uid('owner_a'), 'E''s Diner', 10);
+insert into public.restaurant_hours (restaurant_id, day_of_week, start_minute, end_minute)
+  select (select id from public.restaurants where name = 'E''s Diner'), d, blocks.s, blocks.e
+  from generate_series(0, 6) as d
+  cross join (values (600, 660), (660, 750), (780, 840)) as blocks(s, e);
+
+select tests.authenticate_as('customer_1');
+select lives_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'E''s Diner'),
+      2,
+      (date_trunc('day', now()) + interval '1 day 10 hours 30 minutes'),
+      90
+    )$$,
+  'a reservation spanning the seam between two back-to-back hours blocks (11:00) is accepted, not rejected as spanning a gap'
+);
+
+select throws_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'E''s Diner'),
+      2,
+      (date_trunc('day', now()) + interval '1 day 12 hours 40 minutes'),
+      30
+    )$$,
+  'P0001',
+  'Restoran je zatvoren u izabrano vreme.',
+  'a reservation spanning an actual gap between two hours blocks (12:30-13:00) is still correctly rejected'
 );
 
 select * from finish();
