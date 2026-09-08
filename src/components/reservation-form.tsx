@@ -83,6 +83,14 @@ export function ReservationForm({
     return map;
   }, [hours]);
 
+  const selectedSeats = useMemo(
+    () => tables.filter((t) => selectedTableIds.includes(t.id)).reduce((sum, t) => sum + t.seats, 0),
+    [tables, selectedTableIds],
+  );
+  // Selecting tables fixes the party size to their combined seating -
+  // override the free-typed value rather than syncing it via an effect.
+  const effectivePartySize = selectedTableIds.length > 0 ? String(selectedSeats) : partySize;
+
   const sectionColorBySectionId = useMemo(() => new Map(sections.map((s) => [s.id, s.color_index])), [sections]);
   const pickableTables: PickableTable[] = useMemo(
     () =>
@@ -111,7 +119,7 @@ export function ReservationForm({
     const hasTables = selectedTableIds.length > 0;
     const { data, error: rpcError } = await supabase.rpc("create_reservation", {
       p_restaurant_id: restaurant.id,
-      p_party_size: Number(partySize),
+      p_party_size: Number(effectivePartySize),
       p_starts_at: new Date(startsAt).toISOString(),
       p_stay_minutes: stayMinutes ? Number(stayMinutes) : null,
       p_section_id: hasTables ? null : sectionId || null,
@@ -158,7 +166,7 @@ export function ReservationForm({
   }
 
   return (
-    <div className="w-full max-w-lg space-y-6">
+    <div className="w-full max-w-3xl space-y-6">
       <div className="rounded-lg border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-700 dark:bg-stone-800">
         <h2 className="mb-2 text-sm font-medium">Radno vreme</h2>
         {hours.length === 0 ? (
@@ -213,10 +221,14 @@ export function ReservationForm({
               type="number"
               min={1}
               required
-              value={partySize}
+              readOnly={selectedTableIds.length > 0}
+              value={effectivePartySize}
               onChange={(event) => setPartySize(event.target.value)}
-              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
+              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent read-only:cursor-not-allowed read-only:bg-stone-100 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:read-only:bg-stone-900"
             />
+            {selectedTableIds.length > 0 && (
+              <p className="text-xs text-stone-500 dark:text-stone-400">Određeno izabranim stolovima.</p>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -263,6 +275,7 @@ export function ReservationForm({
             <TablePicker
               tables={pickableTables}
               layouts={layouts}
+              sections={sections.map((s) => ({ id: s.id, name: s.name, colorIndex: s.color_index }))}
               value={selectedTableIds}
               onChange={setSelectedTableIds}
             />

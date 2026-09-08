@@ -24,11 +24,13 @@ export type PickableTable = {
 export function TablePicker({
   tables,
   layouts,
+  sections,
   value,
   onChange,
 }: {
   tables: PickableTable[];
   layouts: { id: string; name: string }[];
+  sections: { id: string; name: string; colorIndex: number }[];
   value: string[];
   onChange: (next: string[]) => void;
 }) {
@@ -48,6 +50,21 @@ export function TablePicker({
 
   return (
     <div className="space-y-2">
+      {sections.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-stone-600 dark:text-stone-400">
+          {sections.map((s) => (
+            <span key={s.id} className="flex items-center gap-1">
+              <span
+                aria-hidden
+                className="size-3 rounded-full border border-stone-300 dark:border-stone-600"
+                style={{ backgroundColor: sectionColor(s.colorIndex) }}
+              />
+              {s.name}
+            </span>
+          ))}
+        </div>
+      )}
+
       {layouts.length > 1 && (
         <div className="flex flex-wrap gap-2">
           {layouts.map((l) => (
