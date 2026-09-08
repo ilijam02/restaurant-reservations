@@ -1,10 +1,11 @@
 -- Mirrors get_occupied_table_ids.sql, but for the no-layout/sections-only
 -- world: lets a customer see a section's remaining room for a candidate
--- time range before submitting, so the form can warn them up front that an
--- explicit section preference won't fit the whole party - create_reservation()
--- rejects that outright rather than spilling into another section, so
--- catching it client-side (instead of only after a failed submit) is the
--- whole point here.
+-- time range before submitting, so the form can preview up front how many
+-- guests would spill into another section if an explicit section
+-- preference doesn't have room for the whole party - create_reservation()
+-- fills the preferred section first, then spills the remainder into other
+-- sections by remaining capacity, so this is a "how much would spill"
+-- preview, not a "will this be rejected" one.
 --
 -- Same privacy shape as get_occupied_table_ids: reservation_sections/
 -- reservations are only selectable by the reservation's own customer, the

@@ -10,7 +10,7 @@
 -- hours-crossing logic - that's covered by manual browser verification
 -- instead.
 begin;
-select plan(40);
+select plan(42);
 
 select tests.rls_enabled('public', 'reservations');
 select tests.rls_enabled('public', 'reservation_tables');
@@ -93,6 +93,34 @@ insert into public.restaurants (owner_id, name, capacity) values (tests.get_supa
 insert into public.restaurant_hours (restaurant_id, day_of_week, start_minute, end_minute)
   select (select id from public.restaurants where name = 'D''s Grill'), d, 0, 1440
   from generate_series(0, 6) as d;
+
+-- Only customer-role accounts may create reservations at all - checked
+-- before any restaurant-specific validation.
+select tests.authenticate_as('owner_a');
+select throws_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'D''s Grill'),
+      2,
+      (date_trunc('day', now()) + interval '5 days 12 hours'),
+      60
+    )$$,
+  'P0001',
+  'Samo nalozi tipa kupac mogu praviti rezervacije.',
+  'an owner account cannot create a reservation'
+);
+
+select tests.authenticate_as('employee_1');
+select throws_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'D''s Grill'),
+      2,
+      (date_trunc('day', now()) + interval '5 days 12 hours'),
+      60
+    )$$,
+  'P0001',
+  'Samo nalozi tipa kupac mogu praviti rezervacije.',
+  'an employee account cannot create a reservation'
+);
 
 -- === A's Bistro: explicit multi-table booking ===
 select tests.authenticate_as('customer_1');

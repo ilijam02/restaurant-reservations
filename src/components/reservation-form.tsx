@@ -101,10 +101,14 @@ export function ReservationForm({
     };
   }, [canPickTables, startsAt, effectiveStayMinutes, restaurant.id]);
 
-  // Only relevant when there's no layout - once one exists, a section
-  // preference is just picking that section's tables (covered by table
-  // occupancy above), and this restaurant's tables list would be empty.
-  const hasNoLayout = tables.length === 0;
+  // Only relevant when there's no active layout - once one exists, a
+  // section preference is just picking that section's tables (covered by
+  // table occupancy above). Checking whether an active layout *exists*
+  // (matching create_reservation()'s own branch condition) rather than
+  // whether it has tables - an active-but-empty layout is a real, if rare,
+  // owner-side state, and `layouts` here is already fetched pre-filtered
+  // to active ones.
+  const hasNoLayout = layouts.length === 0;
 
   // A section preference fills that section first, then spills into others
   // (same as the table-auto-assign path) - so unlike the table borders
@@ -337,10 +341,10 @@ export function ReservationForm({
           </div>
         </div>
 
-        {/* Only offered when there's no layout - once one exists, a section
-            preference is expressed by picking that section's tables
-            directly in the picker below. */}
-        {sections.length > 0 && pickableTables.length === 0 && (
+        {/* Only offered when there's no active layout - once one exists, a
+            section preference is expressed by picking that section's
+            tables directly in the picker below. */}
+        {sections.length > 0 && hasNoLayout && (
           <div className="space-y-1">
             <label htmlFor="section" className="block text-sm font-medium">
               Sekcija (opciono)

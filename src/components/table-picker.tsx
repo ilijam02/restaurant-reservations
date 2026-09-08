@@ -159,7 +159,7 @@ export function TablePicker({
                 {enabled && !isSelected && (
                   <span
                     aria-hidden
-                    className={`absolute -top-1.5 -right-1.5 flex size-3 items-center justify-center rounded-full border border-white text-[8px] leading-none text-white dark:border-stone-900 ${
+                    className={`absolute -top-1.5 -right-1.5 flex size-3 items-center justify-center rounded-full border border-white text-[8px] leading-none text-white dark:border-stone-900 dark:text-stone-900 ${
                       isOccupied ? "bg-danger" : "bg-success"
                     }`}
                   >
