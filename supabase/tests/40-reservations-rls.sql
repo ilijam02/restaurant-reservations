@@ -10,7 +10,7 @@
 -- hours-crossing logic - that's covered by manual browser verification
 -- instead.
 begin;
-select plan(42);
+select plan(45);
 
 select tests.rls_enabled('public', 'reservations');
 select tests.rls_enabled('public', 'reservation_tables');
@@ -499,6 +499,42 @@ select throws_ok(
   'P0001',
   'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: 0).',
   'a party exceeding the restaurant''s remaining plain capacity is rejected, reporting how much room is actually left'
+);
+
+-- Two separate, individually-valid bookings that don't overlap each other
+-- (each independently fits the plain capacity on its own) can both overlap
+-- a THIRD, wider request range, summing to more than capacity - the
+-- reported "available" figure must clamp to 0, not go negative.
+select lives_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'D''s Grill'),
+      4,
+      (date_trunc('day', now()) + interval '6 days 10 hours'),
+      60
+    )$$,
+  'customer_2 can book D''s Grill to full capacity at a separate, later slot'
+);
+
+select lives_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'D''s Grill'),
+      4,
+      (date_trunc('day', now()) + interval '6 days 12 hours 30 minutes'),
+      60
+    )$$,
+  'customer_2 can book D''s Grill to full capacity again at a third, non-overlapping slot'
+);
+
+select throws_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'D''s Grill'),
+      1,
+      (date_trunc('day', now()) + interval '6 days 10 hours 45 minutes'),
+      120
+    )$$,
+  'P0001',
+  'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: 0).',
+  'a request spanning two separate, individually-valid bookings that together exceed capacity reports 0 available, not negative'
 );
 
 -- === E's Diner: hours-touching regression ===

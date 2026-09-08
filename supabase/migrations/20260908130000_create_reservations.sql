@@ -453,7 +453,13 @@ begin
         and tstzrange(starts_at, ends_at) && tstzrange(p_starts_at, v_ends_at);
 
       if v_booked + p_party_size > v_capacity then
-        raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: %).', (v_capacity - v_booked);
+        -- Two separate, individually-valid bookings that don't overlap
+        -- each other can both overlap a wider query range and sum to more
+        -- than capacity (e.g. two full-capacity bookings at [A,C) and
+        -- [D,F) - neither conflicts with the other, but a request spanning
+        -- [B,E) overlaps both) - clamp instead of reporting a negative
+        -- "available" figure.
+        raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: %).', greatest(0, v_capacity - v_booked);
       end if;
     end if;
 
