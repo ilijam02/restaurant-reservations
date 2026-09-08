@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { TablePicker, type PickableTable } from "@/components/table-picker";
 
@@ -69,9 +69,36 @@ export function ReservationForm({
   const [stayMinutes, setStayMinutes] = useState("");
   const [sectionId, setSectionId] = useState("");
   const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
+  const [occupiedTableIds, setOccupiedTableIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const effectiveStayMinutes = stayMinutes ? Number(stayMinutes) : restaurant.default_stay_minutes;
+  const isDurationValid = effectiveStayMinutes >= 30 && effectiveStayMinutes <= 180;
+  // Availability (and thus which tables can even be picked) only means
+  // something once there's a candidate time range to check it against.
+  const canPickTables = startsAt !== "" && isDurationValid;
+
+  // Refetch which tables are already booked whenever the candidate range
+  // changes - selection itself is cleared right in the starts-at/duration
+  // handlers below, since that's a direct response to the user's edit.
+  useEffect(() => {
+    if (!canPickTables) return;
+    let cancelled = false;
+    const supabase = createClient();
+    const startDate = new Date(startsAt);
+    const startIso = startDate.toISOString();
+    const endIso = new Date(startDate.getTime() + effectiveStayMinutes * 60000).toISOString();
+    supabase
+      .rpc("get_occupied_table_ids", { p_restaurant_id: restaurant.id, p_starts_at: startIso, p_ends_at: endIso })
+      .then(({ data }) => {
+        if (!cancelled) setOccupiedTableIds(new Set((data ?? []).map((row: { table_id: string }) => row.table_id)));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canPickTables, startsAt, effectiveStayMinutes, restaurant.id]);
 
   const hoursByDay = useMemo(() => {
     const map = new Map<number, HoursRow[]>();
@@ -109,6 +136,19 @@ export function ReservationForm({
     [tables, sectionColorBySectionId],
   );
 
+  // How many guests would land outside the preferred section if it doesn't
+  // have room - only meaningful once availability is known, no table was
+  // explicitly chosen (that's a stricter path with no spillover), and a
+  // layout actually exists to draw free tables from.
+  const sectionOverflow = useMemo(() => {
+    if (!canPickTables || !sectionId || selectedTableIds.length > 0 || pickableTables.length === 0) return 0;
+    const freeSeatsInSection = pickableTables
+      .filter((t) => t.sectionId === sectionId && !occupiedTableIds.has(t.id))
+      .reduce((sum, t) => sum + t.seats, 0);
+    const party = Number(effectivePartySize) || 0;
+    return Math.max(0, party - freeSeatsInSection);
+  }, [canPickTables, sectionId, selectedTableIds.length, pickableTables, occupiedTableIds, effectivePartySize]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -134,15 +174,24 @@ export function ReservationForm({
 
     // Auto-assignment means the customer doesn't necessarily know what they
     // got - look up what was actually assigned so the confirmation isn't
-    // silent about it.
+    // silent about it. Tables can span more than one layout (e.g. a spillover
+    // out of a preferred section's layout), so group by layout name rather
+    // than listing them flat.
     let assignedText = "";
     const { data: assignedTables } = await supabase
       .from("reservation_tables")
-      .select("tables(name)")
+      .select("tables(name, layouts(name))")
       .eq("reservation_id", data.id);
     if (assignedTables && assignedTables.length > 0) {
-      const names = assignedTables.map((row) => (row.tables as unknown as { name: string }).name);
-      assignedText = ` Sto: ${names.join(", ")}.`;
+      const groups = new Map<string, string[]>();
+      for (const row of assignedTables) {
+        const table = row.tables as unknown as { name: string; layouts: { name: string } | null };
+        const layoutName = table.layouts?.name ?? "Raspored";
+        const names = groups.get(layoutName) ?? [];
+        names.push(table.name);
+        groups.set(layoutName, names);
+      }
+      assignedText = ` ${[...groups.entries()].map(([layoutName, names]) => `${layoutName}: ${names.join(", ")}`).join(", ")}.`;
     } else {
       const { data: assignedSections } = await supabase
         .from("reservation_sections")
@@ -206,7 +255,10 @@ export function ReservationForm({
             required
             min={minDateTimeLocal()}
             value={startsAt}
-            onChange={(event) => setStartsAt(event.target.value)}
+            onChange={(event) => {
+              setStartsAt(event.target.value);
+              setSelectedTableIds([]);
+            }}
             className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
           />
         </div>
@@ -240,7 +292,10 @@ export function ReservationForm({
               type="number"
               placeholder={restaurant.default_stay_minutes.toString()}
               value={stayMinutes}
-              onChange={(event) => setStayMinutes(event.target.value)}
+              onChange={(event) => {
+                setStayMinutes(event.target.value);
+                setSelectedTableIds([]);
+              }}
               className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
             />
             <p className="text-xs text-stone-500 dark:text-stone-400">Između 30 i 180 minuta.</p>
@@ -266,6 +321,11 @@ export function ReservationForm({
                 </option>
               ))}
             </select>
+            {sectionOverflow > 0 && (
+              <p role="status" className="text-xs text-warning">
+                {`Upozorenje: ${sectionOverflow} gostiju neće stati u izabranu sekciju - restoran će ih smestiti u drugu sekciju.`}
+              </p>
+            )}
           </div>
         )}
 
@@ -278,6 +338,8 @@ export function ReservationForm({
               sections={sections.map((s) => ({ id: s.id, name: s.name, colorIndex: s.color_index }))}
               value={selectedTableIds}
               onChange={setSelectedTableIds}
+              enabled={canPickTables}
+              occupiedTableIds={occupiedTableIds}
             />
           </div>
         )}

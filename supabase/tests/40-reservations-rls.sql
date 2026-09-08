@@ -10,7 +10,7 @@
 -- hours-crossing logic - that's covered by manual browser verification
 -- instead.
 begin;
-select plan(31);
+select plan(34);
 
 select tests.rls_enabled('public', 'reservations');
 select tests.rls_enabled('public', 'reservation_tables');
@@ -60,6 +60,21 @@ insert into public.restaurant_staff (restaurant_id, employee_id, status)
   values ((select id from public.restaurants where name = 'A''s Bistro'), tests.get_supabase_uid('employee_1'), 'accepted');
 insert into public.restaurant_staff (restaurant_id, employee_id, status)
   values ((select id from public.restaurants where name = 'A''s Bistro'), tests.get_supabase_uid('employee_2'), 'pending');
+
+-- tables(layout_id, name) uniqueness (see
+-- tables_layout_name_unique.sql): two tables in the same layout can't share
+-- a name, though the same name is fine across two different layouts.
+select throws_ok(
+  $$insert into public.tables (restaurant_id, layout_id, name, seats, x, y, width, height)
+    values (
+      (select id from public.restaurants where name = 'A''s Bistro'),
+      (select id from public.layouts where name = 'Raspored 1'),
+      'Sto Mali', 2, 10, 10, 2, 2
+    )$$,
+  '23505',
+  null,
+  'two tables in the same layout cannot share a name'
+);
 
 -- Setup: C's Cafe - sections only, no layout.
 insert into public.restaurants (owner_id, name) values (tests.get_supabase_uid('owner_a'), 'C''s Cafe');
@@ -284,6 +299,32 @@ select results_eq(
     where rt.table_id = (select id from public.tables where name = 'Sto Mali')$$,
   ARRAY[1],
   'an accepted staff member can see the reservation_tables row'
+);
+
+-- get_occupied_table_ids (see get_occupied_table_ids.sql): backs the
+-- reservation form's free/occupied table borders, computed client-side
+-- before a reservation is actually submitted - it must work for a customer
+-- with no relation to the booking (unlike a plain select against
+-- reservation_tables, which RLS would block for them), and only report
+-- tables actually occupied in the requested, overlapping time range.
+select tests.authenticate_as('customer_2');
+select results_eq(
+  $$select table_id from public.get_occupied_table_ids(
+      (select id from public.restaurants where name = 'A''s Bistro'),
+      (date_trunc('day', now()) + interval '1 day 12 hours 30 minutes'),
+      (date_trunc('day', now()) + interval '1 day 13 hours 30 minutes')
+    ) order by table_id$$,
+  $$select id from public.tables where name in ('Sto Mali', 'Sto Veliki') order by id$$,
+  'get_occupied_table_ids reports both tables booked by the overlapping explicit multi-table reservation'
+);
+
+select is_empty(
+  $$select table_id from public.get_occupied_table_ids(
+      (select id from public.restaurants where name = 'A''s Bistro'),
+      (date_trunc('day', now()) + interval '1 day 15 hours'),
+      (date_trunc('day', now()) + interval '1 day 16 hours')
+    )$$,
+  'get_occupied_table_ids reports nothing for a time range with no overlapping reservation'
 );
 
 -- === C's Cafe: section auto-split ===

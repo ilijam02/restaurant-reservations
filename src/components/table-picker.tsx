@@ -27,18 +27,25 @@ export function TablePicker({
   sections,
   value,
   onChange,
+  enabled,
+  occupiedTableIds,
 }: {
   tables: PickableTable[];
   layouts: { id: string; name: string }[];
   sections: { id: string; name: string; colorIndex: number }[];
   value: string[];
   onChange: (next: string[]) => void;
+  // Time/duration must be chosen first - availability (and thus which
+  // tables are even pickable) is meaningless without a candidate range.
+  enabled: boolean;
+  occupiedTableIds: Set<string>;
 }) {
   const [activeLayoutId, setActiveLayoutId] = useState(layouts[0]?.id ?? null);
   const selected = new Set(value);
   const visibleTables = tables.filter((t) => t.layoutId === activeLayoutId);
 
   function toggle(id: string) {
+    if (!enabled || occupiedTableIds.has(id)) return;
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -91,13 +98,23 @@ export function TablePicker({
         <div className="relative" style={{ width: GRID_COLS * GRID_UNIT, height: GRID_ROWS * GRID_UNIT }}>
           {visibleTables.map((t) => {
             const isSelected = selected.has(t.id);
+            const isOccupied = enabled && occupiedTableIds.has(t.id);
+            const borderClass = isSelected
+              ? "border-accent ring-2 ring-accent"
+              : !enabled
+                ? "border-stone-400 dark:border-stone-500"
+                : isOccupied
+                  ? "border-danger"
+                  : "border-success";
             return (
               <button
                 key={t.id}
                 type="button"
+                disabled={!enabled || isOccupied}
                 onClick={() => toggle(t.id)}
-                className={`absolute flex cursor-pointer items-center justify-center rounded-sm border-2 text-center text-[11px] leading-tight text-stone-900 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-accent ${
-                  isSelected ? "border-accent ring-2 ring-accent" : "border-stone-400 dark:border-stone-500"
+                aria-label={enabled ? `${t.name}, ${t.seats} mesta, ${isOccupied ? "zauzeto" : "slobodno"}` : undefined}
+                className={`absolute flex items-center justify-center rounded-sm border-2 text-center text-[11px] leading-tight text-stone-900 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-accent ${borderClass} ${
+                  !enabled ? "cursor-not-allowed opacity-60" : isOccupied ? "cursor-not-allowed opacity-70" : "cursor-pointer"
                 }`}
                 style={{
                   left: t.x * GRID_UNIT,
@@ -107,6 +124,19 @@ export function TablePicker({
                   backgroundColor: t.sectionColorIndex !== null ? sectionColor(t.sectionColorIndex) : undefined,
                 }}
               >
+                {/* Status is never color-only (see CLAUDE.md) - the
+                    free/occupied border color is paired with a shape icon
+                    too, so it still reads for color-blind users. */}
+                {enabled && !isSelected && (
+                  <span
+                    aria-hidden
+                    className={`absolute -top-1.5 -right-1.5 flex size-3 items-center justify-center rounded-full border border-white text-[8px] leading-none text-white dark:border-stone-900 ${
+                      isOccupied ? "bg-danger" : "bg-success"
+                    }`}
+                  >
+                    {isOccupied ? "✕" : "✓"}
+                  </span>
+                )}
                 <span className={t.sectionColorIndex !== null ? "" : "text-stone-600 dark:text-stone-300"}>
                   {t.name}
                   <br />
@@ -119,9 +149,11 @@ export function TablePicker({
       </div>
 
       <p className="text-xs text-stone-600 dark:text-stone-400">
-        {selected.size === 0
-          ? "Nijedan sto nije izabran - restoran će dodeliti sto."
-          : `Izabrano stolova: ${selected.size} (mesta: ${totalSeats})`}
+        {!enabled
+          ? "Izaberite datum, vreme i trajanje da biste videli dostupne stolove."
+          : selected.size === 0
+            ? "Nijedan sto nije izabran - restoran će dodeliti sto."
+            : `Izabrano stolova: ${selected.size} (mesta: ${totalSeats})`}
       </p>
     </div>
   );
