@@ -10,7 +10,7 @@
 -- hours-crossing logic - that's covered by manual browser verification
 -- instead.
 begin;
-select plan(36);
+select plan(38);
 
 select tests.rls_enabled('public', 'reservations');
 select tests.rls_enabled('public', 'reservation_tables');
@@ -355,20 +355,46 @@ select results_eq(
   'the split allocations sum back to the full party size'
 );
 
--- Explicit section without enough remaining room is rejected outright (no
--- spillover into the other section).
+-- A section preference too small for the whole party spills into another
+-- section rather than being rejected - Basta (capacity 3) is filled to its
+-- own capacity first despite Unutra having more raw room (capacity 4),
+-- since the preference decides fill order, not which section has more
+-- space. Uses a fresh, non-overlapping time so this is about capacity, not
+-- a collision with the earlier split booking.
 select tests.authenticate_as('customer_2');
-select throws_ok(
+select lives_ok(
   $$select public.create_reservation(
       (select id from public.restaurants where name = 'C''s Cafe'),
-      4,
-      (date_trunc('day', now()) + interval '1 day 12 hours 30 minutes'),
+      5,
+      (date_trunc('day', now()) + interval '3 days 12 hours'),
       60,
       (select id from public.sections where name = 'Basta')
     )$$,
-  'P0001',
-  'Nema dovoljno slobodnih mesta u izabrano vreme.',
-  'an explicit section without enough remaining capacity is rejected, not spilled over'
+  'a section preference too small for the whole party spills into another section instead of being rejected'
+);
+
+select results_eq(
+  $$select rs.party_size from public.reservation_sections rs
+    join public.reservations r on r.id = rs.reservation_id
+    join public.sections s on s.id = rs.section_id
+    where r.customer_id = tests.get_supabase_uid('customer_2')
+      and r.restaurant_id = (select id from public.restaurants where name = 'C''s Cafe')
+      and r.party_size = 5
+      and s.name = 'Basta'$$,
+  ARRAY[3],
+  'the preferred section (Basta) is filled to its own capacity first'
+);
+
+select results_eq(
+  $$select rs.party_size from public.reservation_sections rs
+    join public.reservations r on r.id = rs.reservation_id
+    join public.sections s on s.id = rs.section_id
+    where r.customer_id = tests.get_supabase_uid('customer_2')
+      and r.restaurant_id = (select id from public.restaurants where name = 'C''s Cafe')
+      and r.party_size = 5
+      and s.name = 'Unutra'$$,
+  ARRAY[2],
+  'the remainder spills into the other section'
 );
 
 -- get_section_remaining_capacity (see get_section_remaining_capacity.sql):
@@ -443,8 +469,8 @@ select throws_ok(
       60
     )$$,
   'P0001',
-  'Nema dovoljno slobodnih mesta u izabrano vreme.',
-  'a party exceeding the restaurant''s remaining plain capacity is rejected'
+  'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: 0).',
+  'a party exceeding the restaurant''s remaining plain capacity is rejected, reporting how much room is actually left'
 );
 
 select * from finish();

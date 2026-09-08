@@ -106,10 +106,10 @@ export function ReservationForm({
   // occupancy above), and this restaurant's tables list would be empty.
   const hasNoLayout = tables.length === 0;
 
-  // A section choice is validated strictly server-side (no spillover into
-  // another section, unlike the table-auto-assign path) - so unlike the
-  // table borders above, this isn't a live per-table picture but a single
-  // "would this fit" check against each section's own remaining room.
+  // A section preference fills that section first, then spills into others
+  // (same as the table-auto-assign path) - so unlike the table borders
+  // above, this isn't a live per-table picture but a single "how much room
+  // is left in each section" check, used to preview how much would spill.
   useEffect(() => {
     if (!canPickTables || !hasNoLayout || sections.length === 0) return;
     let cancelled = false;
@@ -149,10 +149,15 @@ export function ReservationForm({
   // override the free-typed value rather than syncing it via an effect.
   const effectivePartySize = selectedTableIds.length > 0 ? String(selectedSeats) : partySize;
 
-  // How many guests would be short if the chosen section preference doesn't
-  // have room - create_reservation() rejects this outright rather than
-  // spilling into another section, so this is a "will this fail" preview,
-  // not a "here's what'll happen instead" one.
+  // How many guests would spill into another section if the chosen
+  // preference doesn't have room - create_reservation() fills the
+  // preferred section first, then spills the remainder into other
+  // sections rather than rejecting the booking outright, so this is
+  // informational, not a "this booking will fail" warning. It only checks
+  // the preferred section's own room though, not whether the rest of the
+  // restaurant can actually absorb the spillover - the message is worded
+  // to hedge on that ("might", not "will") since submission can still fail
+  // if there truly isn't enough room anywhere.
   const sectionShortfall = useMemo(() => {
     if (!canPickTables || !sectionId) return 0;
     const remaining = sectionRemaining.get(sectionId);
@@ -355,7 +360,7 @@ export function ReservationForm({
             </select>
             {sectionShortfall > 0 && (
               <p role="status" className="text-xs text-warning">
-                {`Upozorenje: ova sekcija trenutno nema dovoljno slobodnih mesta za celu grupu (nedostaje ${sectionShortfall}) - rezervacija neće uspeti dok ne smanjite broj gostiju, izaberete drugu sekciju ili drugo vreme.`}
+                {`Upozorenje: ova sekcija trenutno nema dovoljno slobodnih mesta za celu grupu - ${sectionShortfall} ${sectionShortfall === 1 ? "gost" : "gostiju"} moglo bi biti smešteno u drugu sekciju, ako ima mesta.`}
               </p>
             )}
           </div>

@@ -193,26 +193,30 @@ create policy "Staff can view reservation sections at their restaurants"
 -- since every reference here is schema-qualified (public.xxx) or a
 -- pg_catalog builtin (always searched regardless of search_path).
 --
--- Explicit p_table_ids/p_section_id are validated strictly against exactly
--- what was chosen (rejected if it doesn't fit - no silent expansion into
--- resources the customer didn't ask for). Only the *absence* of an
--- explicit choice triggers auto-assignment with spillover across multiple
--- tables or sections:
+-- p_table_ids is the one thing validated strictly against exactly what was
+-- chosen (rejected if it doesn't fit - no silent expansion into tables the
+-- customer didn't ask for). p_section_id, by contrast, is only ever a
+-- *preference* for where to start - if it can't fit the whole party alone,
+-- the remainder spills into other tables/sections rather than being
+-- rejected outright:
 --   - p_table_ids given: exact tables, party must fit their combined seats.
 --   - no p_table_ids, an active layout exists: auto-assign free tables,
 --     preferring p_section_id's tables first (if given) then the rest of
 --     the restaurant, largest-seat-first, until the party is covered.
---   - no p_table_ids, no active layout, p_section_id given: that section's
---     own remaining capacity must cover the whole party.
---   - no p_table_ids/p_section_id, no active layout, sections exist:
---     auto-assign across sections by remaining capacity (most room first),
---     splitting across as many as it takes to cover the party.
+--   - no p_table_ids, no active layout, sections exist: auto-assign across
+--     sections, preferring p_section_id first (if given) then the rest by
+--     remaining capacity (most room first), splitting across as many as it
+--     takes to cover the party.
 --   - no layout, no sections at all: plain restaurant.capacity ceiling
 --     (null = unlimited), unchanged from the original design.
 -- Once a layout is active or sections exist, that becomes the entire
 -- capacity story (matching the capacity-cascade rule already established
 -- for the owner's edit form) - restaurants.capacity is only ever consulted
 -- in the last, simplest case.
+--
+-- Every "not enough room" rejection reports how much room actually is
+-- available at that time, so the customer isn't left guessing how far off
+-- they were.
 --
 -- Concurrency: the restaurant row is locked unconditionally near the top,
 -- which serializes *every* insert against a given restaurant - table-level,
@@ -388,7 +392,7 @@ begin
     end loop;
 
     if v_running < p_party_size then
-      raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme.';
+      raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: %).', v_running;
     end if;
 
     insert into public.reservations (restaurant_id, customer_id, party_size, starts_at, ends_at, status)
@@ -398,35 +402,13 @@ begin
     insert into public.reservation_tables (reservation_id, table_id, starts_at, ends_at)
     select v_reservation_id, tid, p_starts_at, v_ends_at from unnest(v_chosen_table_ids) as tid;
 
-  elsif p_section_id is not null then
-    -- No layout, explicit section: validated strictly against that
-    -- section's own remaining room, no spillover into other sections.
-    if not exists (select 1 from public.sections where id = p_section_id and restaurant_id = p_restaurant_id) then
-      raise exception 'Sekcija ne postoji u ovom restoranu.';
-    end if;
-
-    select capacity into v_capacity from public.sections where id = p_section_id;
-    select coalesce(sum(rs.party_size), 0) into v_booked
-    from public.reservation_sections rs
-    join public.reservations res on res.id = rs.reservation_id
-    where rs.section_id = p_section_id
-      and res.status = 'confirmed'
-      and tstzrange(res.starts_at, res.ends_at) && tstzrange(p_starts_at, v_ends_at);
-
-    if v_booked + p_party_size > v_capacity then
-      raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme.';
-    end if;
-
-    insert into public.reservations (restaurant_id, customer_id, party_size, starts_at, ends_at, status)
-    values (p_restaurant_id, auth.uid(), p_party_size, p_starts_at, v_ends_at, 'confirmed')
-    returning id into v_reservation_id;
-
-    insert into public.reservation_sections (reservation_id, section_id, party_size)
-    values (v_reservation_id, p_section_id, p_party_size);
-
   elsif exists (select 1 from public.sections where restaurant_id = p_restaurant_id) then
-    -- No layout, no section chosen, sections exist: auto-split across
-    -- sections by remaining capacity, most room first.
+    -- No layout, sections exist: auto-split across sections, preferring
+    -- p_section_id first (if given) then the rest by remaining capacity,
+    -- most room first - same "preference, not a hard requirement"
+    -- treatment the table auto-assign branch above gives p_section_id, so
+    -- a preferred section that can't fit the whole party spills into
+    -- others rather than being rejected outright.
     v_remaining := p_party_size;
     v_chosen_section_ids := '{}';
     v_chosen_section_allocs := '{}';
@@ -441,7 +423,7 @@ begin
         ), 0) as remaining
       from public.sections s
       where s.restaurant_id = p_restaurant_id
-      order by remaining desc
+      order by (s.id = p_section_id) desc nulls last, remaining desc
     )
     loop
       exit when v_remaining <= 0;
@@ -453,7 +435,7 @@ begin
     end loop;
 
     if v_remaining > 0 then
-      raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme.';
+      raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: %).', (p_party_size - v_remaining);
     end if;
 
     insert into public.reservations (restaurant_id, customer_id, party_size, starts_at, ends_at, status)
@@ -475,7 +457,7 @@ begin
         and tstzrange(starts_at, ends_at) && tstzrange(p_starts_at, v_ends_at);
 
       if v_booked + p_party_size > v_capacity then
-        raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme.';
+        raise exception 'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: %).', (v_capacity - v_booked);
       end if;
     end if;
 
