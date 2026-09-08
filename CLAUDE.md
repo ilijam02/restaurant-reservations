@@ -40,7 +40,8 @@ Not yet decided:
 **Implemented features:**
 
 - Login (`/login`) and signup (`/signup`) with email/password via Supabase Auth. Signup also collects first name, last name, phone, and role (customer/employee/owner), stored in a `profiles` table populated by a DB trigger (`supabase/migrations/`).
-- Role-based home pages (`/customer`, `/employee`, `/owner`) — title only + logout, gated by `src/proxy.ts` (Next.js 16 renamed `middleware` to `proxy` — see `AGENTS.md`).
+- Role-based home pages (`/customer`, `/employee`, `/owner`) — title only, gated by `src/proxy.ts` (Next.js 16 renamed `middleware` to `proxy` — see `AGENTS.md`).
+- A shared `AppHeader` component (`src/components/app-header.tsx`) renders a top-left dropdown menu (logout, for now) on every page except `/login` and `/signup`, plus a back button next to it on every page except login/signup/the three home pages — see the "AppHeader" line under Working conventions.
 - All UI text is in Serbian.
 - `restaurants` table exists in the DB (`supabase/migrations/`) — schema only, no app code/UI yet. Minimal columns (`id`, `owner_id`, `name`, `created_at`); see the "Restaurants table" line under Decided in `ISSUES.md` for what's deliberately deferred.
 
@@ -58,6 +59,7 @@ Not yet decided:
 - Do not create or merge pull requests without the user's explicit permission each time — committing to a branch and opening a PR for review is fine, but ask before opening it and before merging it.
 - Run the `code-reviewer` subagent (`.claude/agents/code-reviewer.md`) against the branch's diff before opening a PR, and address or consciously accept its findings first — it's a manual step, not CI-enforced, so it only helps if actually run.
 - Before changing any files for a task, create/checkout a dedicated feature branch first — never commit work directly on `main`. If the working tree already has unrelated uncommitted changes when starting (e.g. from a concurrent session in the same checkout), stash them (`git stash -u`) rather than letting them silently carry onto the new branch — otherwise they can end up committed into the wrong PR (this happened once: an in-progress dark-mode fix got swept into an unrelated `ISSUES.md` PR because it was still uncommitted when that branch was created off of it).
+- **AppHeader:** every new page except `/login`, `/signup`, and the three role home pages (`/customer`, `/employee`, `/owner`) must render `<AppHeader backHref="...">`, with `backHref` set to that page's logical parent route (e.g. a restaurant detail page's `backHref` points at its role's home page; a page nested one level deeper, like the reservation form, points at the detail page above it). The three home pages render `<AppHeader />` with no `backHref` — the dropdown but no back button. This is **not automatic** — there's no shared `layout.tsx` applying it, so a new page has to include it explicitly or it silently ends up with no header at all.
 
 ## Design conventions
 
