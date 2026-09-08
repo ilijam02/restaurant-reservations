@@ -41,10 +41,17 @@ export function TablePicker({
   occupiedTableIds: Set<string>;
 }) {
   const [activeLayoutId, setActiveLayoutId] = useState(layouts[0]?.id ?? null);
+  // The last table clicked, shown in the fixed info bar above the canvas -
+  // separate from `value` since it tracks the most recent click regardless
+  // of whether that click selected or deselected the table.
+  const [lastClickedId, setLastClickedId] = useState<string | null>(null);
   const selected = new Set(value);
   const visibleTables = tables.filter((t) => t.layoutId === activeLayoutId);
 
   function toggle(id: string) {
+    // Occupied tables are never clickable in the first place (disabled
+    // below), so this only ever fires for a free one.
+    setLastClickedId(id);
     if (!enabled || occupiedTableIds.has(id)) return;
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
@@ -54,6 +61,10 @@ export function TablePicker({
 
   const selectedTables = tables.filter((t) => selected.has(t.id));
   const totalSeats = selectedTables.reduce((sum, t) => sum + t.seats, 0);
+  const lastClickedTable = tables.find((t) => t.id === lastClickedId) ?? null;
+  const lastClickedSectionName = lastClickedTable?.sectionId
+    ? (sections.find((s) => s.id === lastClickedTable.sectionId)?.name ?? null)
+    : null;
 
   return (
     <div className="space-y-2">
@@ -90,6 +101,24 @@ export function TablePicker({
           ))}
         </div>
       )}
+
+      {/* Fixed height regardless of content, so the canvas below never
+          shifts as a table is clicked or deselected. */}
+      <div className="flex min-h-[52px] flex-wrap items-center gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm dark:border-stone-700 dark:bg-stone-900/40">
+        {lastClickedTable ? (
+          <>
+            <span className="font-medium">{lastClickedTable.name}</span>
+            <span className="text-stone-600 dark:text-stone-400">Mesta: {lastClickedTable.seats}</span>
+            {lastClickedSectionName && (
+              <span className="text-stone-600 dark:text-stone-400">Sekcija: {lastClickedSectionName}</span>
+            )}
+          </>
+        ) : (
+          <span className="text-stone-500 dark:text-stone-400">
+            {enabled ? "Kliknite na sto da vidite detalje." : "Izaberite datum, vreme i trajanje da biste videli dostupne stolove."}
+          </span>
+        )}
+      </div>
 
       <div
         className="w-full overflow-auto rounded-lg border border-stone-200 bg-stone-50 dark:border-stone-700 dark:bg-stone-900/40"

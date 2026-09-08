@@ -70,6 +70,7 @@ export function ReservationForm({
   const [sectionId, setSectionId] = useState("");
   const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
   const [occupiedTableIds, setOccupiedTableIds] = useState<Set<string>>(new Set());
+  const [sectionRemaining, setSectionRemaining] = useState<Map<string, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -100,6 +101,36 @@ export function ReservationForm({
     };
   }, [canPickTables, startsAt, effectiveStayMinutes, restaurant.id]);
 
+  // Only relevant when there's no layout - once one exists, a section
+  // preference is just picking that section's tables (covered by table
+  // occupancy above), and this restaurant's tables list would be empty.
+  const hasNoLayout = tables.length === 0;
+
+  // A section choice is validated strictly server-side (no spillover into
+  // another section, unlike the table-auto-assign path) - so unlike the
+  // table borders above, this isn't a live per-table picture but a single
+  // "would this fit" check against each section's own remaining room.
+  useEffect(() => {
+    if (!canPickTables || !hasNoLayout || sections.length === 0) return;
+    let cancelled = false;
+    const supabase = createClient();
+    const startDate = new Date(startsAt);
+    const startIso = startDate.toISOString();
+    const endIso = new Date(startDate.getTime() + effectiveStayMinutes * 60000).toISOString();
+    supabase
+      .rpc("get_section_remaining_capacity", { p_restaurant_id: restaurant.id, p_starts_at: startIso, p_ends_at: endIso })
+      .then(({ data }) => {
+        if (!cancelled) {
+          setSectionRemaining(
+            new Map((data ?? []).map((row: { section_id: string; remaining: number }) => [row.section_id, row.remaining])),
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canPickTables, hasNoLayout, sections.length, startsAt, effectiveStayMinutes, restaurant.id]);
+
   const hoursByDay = useMemo(() => {
     const map = new Map<number, HoursRow[]>();
     for (const h of hours) {
@@ -118,6 +149,18 @@ export function ReservationForm({
   // override the free-typed value rather than syncing it via an effect.
   const effectivePartySize = selectedTableIds.length > 0 ? String(selectedSeats) : partySize;
 
+  // How many guests would be short if the chosen section preference doesn't
+  // have room - create_reservation() rejects this outright rather than
+  // spilling into another section, so this is a "will this fail" preview,
+  // not a "here's what'll happen instead" one.
+  const sectionShortfall = useMemo(() => {
+    if (!canPickTables || !sectionId) return 0;
+    const remaining = sectionRemaining.get(sectionId);
+    if (remaining === undefined) return 0;
+    const party = Number(effectivePartySize) || 0;
+    return Math.max(0, party - remaining);
+  }, [canPickTables, sectionId, sectionRemaining, effectivePartySize]);
+
   const sectionColorBySectionId = useMemo(() => new Map(sections.map((s) => [s.id, s.color_index])), [sections]);
   const pickableTables: PickableTable[] = useMemo(
     () =>
@@ -135,19 +178,6 @@ export function ReservationForm({
       })),
     [tables, sectionColorBySectionId],
   );
-
-  // How many guests would land outside the preferred section if it doesn't
-  // have room - only meaningful once availability is known, no table was
-  // explicitly chosen (that's a stricter path with no spillover), and a
-  // layout actually exists to draw free tables from.
-  const sectionOverflow = useMemo(() => {
-    if (!canPickTables || !sectionId || selectedTableIds.length > 0 || pickableTables.length === 0) return 0;
-    const freeSeatsInSection = pickableTables
-      .filter((t) => t.sectionId === sectionId && !occupiedTableIds.has(t.id))
-      .reduce((sum, t) => sum + t.seats, 0);
-    const party = Number(effectivePartySize) || 0;
-    return Math.max(0, party - freeSeatsInSection);
-  }, [canPickTables, sectionId, selectedTableIds.length, pickableTables, occupiedTableIds, effectivePartySize]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -302,7 +332,10 @@ export function ReservationForm({
           </div>
         </div>
 
-        {sections.length > 0 && (
+        {/* Only offered when there's no layout - once one exists, a section
+            preference is expressed by picking that section's tables
+            directly in the picker below. */}
+        {sections.length > 0 && pickableTables.length === 0 && (
           <div className="space-y-1">
             <label htmlFor="section" className="block text-sm font-medium">
               Sekcija (opciono)
@@ -311,8 +344,7 @@ export function ReservationForm({
               id="section"
               value={sectionId}
               onChange={(event) => setSectionId(event.target.value)}
-              disabled={selectedTableIds.length > 0}
-              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent disabled:opacity-50 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
+              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100"
             >
               <option value="">Bez preference</option>
               {sections.map((s) => (
@@ -321,9 +353,9 @@ export function ReservationForm({
                 </option>
               ))}
             </select>
-            {sectionOverflow > 0 && (
+            {sectionShortfall > 0 && (
               <p role="status" className="text-xs text-warning">
-                {`Upozorenje: ${sectionOverflow} gostiju neće stati u izabranu sekciju - restoran će ih smestiti u drugu sekciju.`}
+                {`Upozorenje: ova sekcija trenutno nema dovoljno slobodnih mesta za celu grupu (nedostaje ${sectionShortfall}) - rezervacija neće uspeti dok ne smanjite broj gostiju, izaberete drugu sekciju ili drugo vreme.`}
               </p>
             )}
           </div>

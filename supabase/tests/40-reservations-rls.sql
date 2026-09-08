@@ -10,7 +10,7 @@
 -- hours-crossing logic - that's covered by manual browser verification
 -- instead.
 begin;
-select plan(34);
+select plan(36);
 
 select tests.rls_enabled('public', 'reservations');
 select tests.rls_enabled('public', 'reservation_tables');
@@ -369,6 +369,32 @@ select throws_ok(
   'P0001',
   'Nema dovoljno slobodnih mesta u izabrano vreme.',
   'an explicit section without enough remaining capacity is rejected, not spilled over'
+);
+
+-- get_section_remaining_capacity (see get_section_remaining_capacity.sql):
+-- backs the reservation form's section-shortfall warning in the
+-- no-layout/sections-only world - reports each section's own remaining
+-- room for a candidate time range, without exposing whose reservation
+-- consumed it. Still authenticated as customer_2, unrelated to the split
+-- booking that consumed this capacity.
+select results_eq(
+  $$select remaining from public.get_section_remaining_capacity(
+      (select id from public.restaurants where name = 'C''s Cafe'),
+      (date_trunc('day', now()) + interval '1 day 12 hours 30 minutes'),
+      (date_trunc('day', now()) + interval '1 day 13 hours 30 minutes')
+    ) where section_id = (select id from public.sections where name = 'Unutra')$$,
+  ARRAY[0],
+  'get_section_remaining_capacity reports Unutra fully booked by the overlapping split reservation'
+);
+
+select results_eq(
+  $$select remaining from public.get_section_remaining_capacity(
+      (select id from public.restaurants where name = 'C''s Cafe'),
+      (date_trunc('day', now()) + interval '1 day 15 hours'),
+      (date_trunc('day', now()) + interval '1 day 16 hours')
+    ) where section_id = (select id from public.sections where name = 'Unutra')$$,
+  ARRAY[4],
+  'get_section_remaining_capacity reports full capacity again for a non-overlapping time range'
 );
 
 -- reservation_sections RLS: same shape as reservation_tables above.
