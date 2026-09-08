@@ -69,7 +69,7 @@ export function AppHeader({ backHref }: { backHref?: string }) {
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-stone-700"
+              className="w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:text-red-400 dark:hover:bg-stone-700"
             >
               Odjavi se
             </button>
