@@ -73,6 +73,7 @@ update public.restaurant_staff set status = 'accepted'
 
 -- Setup (not asserted): B's Diner - unrelated restaurant/menu item, used
 -- only for cross-restaurant rejections.
+select tests.authenticate_as('owner_b');
 insert into public.restaurants (owner_id, name) values (tests.get_supabase_uid('owner_b'), 'B''s Diner');
 insert into public.menu_items (restaurant_id, name, price, is_available)
   values ((select id from public.restaurants where name = 'B''s Diner'), 'Tuđe jelo', 100, true);
