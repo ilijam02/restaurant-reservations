@@ -10,7 +10,7 @@
 -- availability re-check). B's Diner (owner_b) exists only to exercise
 -- cross-restaurant rejections.
 begin;
-select plan(49);
+select plan(52);
 
 select tests.rls_enabled('public', 'orders');
 select tests.rls_enabled('public', 'order_items');
@@ -148,6 +148,38 @@ select results_eq(
     where oi.item_name = 'Salata' order by choice_name$$,
   ARRAY['Krutoni', 'Velika'],
   'both chosen choices were snapshotted onto the Salata line'
+);
+
+-- Adding the exact same item + choice set again merges into the existing
+-- line (quantity bumped) instead of creating a second, otherwise-identical
+-- row - order of the choice ids shouldn't matter to the match either.
+select lives_ok(
+  $$select public.add_order_item(
+      (select id from public.orders where customer_id = tests.get_supabase_uid('customer_1')),
+      (select id from public.menu_items where name = 'Salata'),
+      array[
+        (select id from public.menu_item_option_choices where name = 'Krutoni'),
+        (select id from public.menu_item_option_choices where name = 'Velika')
+      ],
+      2
+    )$$,
+  'adding Salata again with the same choices (in a different order) succeeds'
+);
+
+select results_eq(
+  $$select count(*)::int from public.order_items
+    where order_id = (select id from public.orders where customer_id = tests.get_supabase_uid('customer_1'))
+      and item_name = 'Salata'$$,
+  ARRAY[1],
+  'it merged into the existing Salata line rather than creating a second one'
+);
+
+select results_eq(
+  $$select quantity from public.order_items
+    where order_id = (select id from public.orders where customer_id = tests.get_supabase_uid('customer_1'))
+      and item_name = 'Salata'$$,
+  ARRAY[3],
+  'the existing line''s quantity was incremented by the newly added quantity (1 + 2)'
 );
 
 select throws_ok(

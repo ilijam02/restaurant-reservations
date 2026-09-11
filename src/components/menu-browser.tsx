@@ -61,6 +61,11 @@ export function MenuBrowser({
   const [expanded, setExpanded] = useState<{ itemId: string; selections: Record<string, string[]>; quantity: number } | null>(
     null,
   );
+  // Shown inline in the expanded modifier panel itself (right next to
+  // "Dodaj u korpu") rather than in the general error block below the
+  // whole item list, which can be scrolled far out of view by the time the
+  // customer notices anything happened.
+  const [optionError, setOptionError] = useState<string | null>(null);
 
   // Only relevant until the customer's cart on this page is actually
   // established (orderId set) - once it is, further adds never touch a
@@ -128,6 +133,7 @@ export function MenuBrowser({
   function openItem(item: MenuItemRow) {
     if (!item.is_available) return;
     setError(null);
+    setOptionError(null);
     if (item.options.length === 0) {
       performAdd(item.id, [], 1);
       return;
@@ -135,7 +141,13 @@ export function MenuBrowser({
     setExpanded({ itemId: item.id, selections: {}, quantity: 1 });
   }
 
+  function closeExpanded() {
+    setExpanded(null);
+    setOptionError(null);
+  }
+
   function toggleChoice(group: MenuOptionGroup, choiceId: string) {
+    setOptionError(null);
     setExpanded((prev) => {
       if (!prev) return prev;
       const current = prev.selections[group.id] ?? [];
@@ -154,9 +166,10 @@ export function MenuBrowser({
     if (!expanded) return;
     const missing = missingRequiredGroup(item, expanded.selections);
     if (missing) {
-      setError(`Grupa opcija "${missing.name}" je obavezna.`);
+      setOptionError(`Grupa opcija "${missing.name}" je obavezna.`);
       return;
     }
+    setOptionError(null);
     const choiceIds = Object.values(expanded.selections).flat();
     performAdd(item.id, choiceIds, expanded.quantity);
   }
@@ -238,7 +251,7 @@ export function MenuBrowser({
                     <button
                       type="button"
                       disabled={!item.is_available}
-                      onClick={() => (expanded?.itemId === item.id ? setExpanded(null) : openItem(item))}
+                      onClick={() => (expanded?.itemId === item.id ? closeExpanded() : openItem(item))}
                       className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
                     >
                       {expanded?.itemId === item.id ? "Zatvori" : "Dodaj"}
@@ -300,6 +313,12 @@ export function MenuBrowser({
                           +
                         </button>
                       </div>
+
+                      {optionError && (
+                        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                          {optionError}
+                        </p>
+                      )}
 
                       <button
                         type="button"

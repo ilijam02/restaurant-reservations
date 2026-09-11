@@ -397,7 +397,7 @@ export function ReservationForm({
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium">Porudžbina</h3>
             <Link
-              href={`/customer/restaurants/${restaurant.id}/menu`}
+              href={`/customer/restaurants/${restaurant.id}`}
               className="text-sm text-orange-700 hover:underline dark:text-accent"
             >
               ← Izmeni porudžbinu
