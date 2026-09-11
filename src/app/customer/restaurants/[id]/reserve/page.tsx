@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ReservationForm } from "@/components/reservation-form";
+import type { CartItem } from "@/components/cart-summary";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function ReserveRestaurantPage({
@@ -49,6 +50,21 @@ export default async function ReserveRestaurantPage({
     .eq("layouts.is_active", true)
     .order("name");
 
+  // At most one row (RLS restricts orders to the caller's own regardless of
+  // status, and a customer has at most one 'draft' at a time - see
+  // start_cart()). Only treated as this page's cart if it's actually a draft
+  // for *this* restaurant - a draft left over from browsing a different
+  // restaurant's menu means "no cart here", not an error, matching the menu
+  // page's own cross-restaurant handling.
+  const { data: draftOrder } = await supabase
+    .from("orders")
+    .select(
+      "id, restaurant_id, items:order_items(id, item_name, unit_price, quantity, choices:order_item_choices(option_name, choice_name, price_delta))",
+    )
+    .eq("status", "draft")
+    .eq("restaurant_id", id)
+    .maybeSingle();
+
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref={`/customer/restaurants/${id}`} />
@@ -59,6 +75,8 @@ export default async function ReserveRestaurantPage({
         sections={sections ?? []}
         layouts={layouts ?? []}
         tables={tables ?? []}
+        orderId={draftOrder?.id ?? null}
+        cartItems={(draftOrder?.items as unknown as CartItem[] | undefined) ?? []}
       />
     </main>
   );
