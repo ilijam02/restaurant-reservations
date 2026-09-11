@@ -251,7 +251,10 @@ export function ReservationForm({
 
     setLoading(false);
     const confirmedAt = new Date(data.starts_at);
-    const orderText = cartItems.length > 0 ? ` Porudžbina u iznosu od ${formatPrice(cartTotal(cartItems))} je plaćena.` : "";
+    // Not "je plaćena" (is paid) - there's no real payment integration yet
+    // (see the placeholder card above the submit button), so claiming a
+    // charge went through would be actively misleading.
+    const orderText = cartItems.length > 0 ? ` Porudžbina u iznosu od ${formatPrice(cartTotal(cartItems))} je zabeležena.` : "";
     setConfirmation(
       `Potvrđeno: rezervacija za ${confirmedAt.toLocaleDateString("sr-RS")} u ${confirmedAt.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.${assignedText}${orderText}`,
     );

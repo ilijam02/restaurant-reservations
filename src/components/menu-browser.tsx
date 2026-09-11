@@ -346,7 +346,7 @@ export function MenuBrowser({
       )}
 
       {pendingReplace && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 dark:bg-black/60">
           <div className="w-full max-w-sm space-y-4 rounded-lg border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-700 dark:bg-stone-800">
             <p>
               Dodavanje ove stavke će obrisati vašu trenutnu porudžbinu iz restorana &quot;{otherDraftRestaurantName}&quot;.

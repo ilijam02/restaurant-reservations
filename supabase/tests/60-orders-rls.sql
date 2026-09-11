@@ -10,7 +10,7 @@
 -- availability re-check). B's Diner (owner_b) exists only to exercise
 -- cross-restaurant rejections.
 begin;
-select plan(52);
+select plan(54);
 
 select tests.rls_enabled('public', 'orders');
 select tests.rls_enabled('public', 'order_items');
@@ -303,7 +303,7 @@ select throws_ok(
       and item_name = 'Pica'$$,
   '42501',
   null,
-  'the column-level grant only covers quantity - a direct unit_price update is rejected'
+  'the immutability trigger rejects a direct unit_price update - only quantity may change'
 );
 
 select lives_ok(
@@ -558,6 +558,28 @@ select results_eq(
     where customer_id = tests.get_supabase_uid('customer_1') and status = 'confirmed'$$,
   ARRAY[0],
   'an unrelated owner cannot see another restaurant''s confirmed order'
+);
+
+-- Regression: menu_items.menu_item_id's "on delete set null" (rather than
+-- cascade) is implemented internally as an UPDATE on the referencing
+-- order_items row - a naive immutability trigger that also protects
+-- menu_item_id would reject that internal update and make the delete fail
+-- outright. customer_2's still-draft Pica line (added earlier, never
+-- removed) exercises this: deleting Pica must still succeed, and the line
+-- must survive with menu_item_id nulled out but its price/name snapshot
+-- intact.
+select tests.authenticate_as('owner_a');
+select lives_ok(
+  $$delete from public.menu_items where name = 'Pica'$$,
+  'deleting a menu item that has an existing (draft) order line still succeeds'
+);
+
+select results_eq(
+  $$select menu_item_id, item_name, unit_price from public.order_items oi
+    join public.orders o on o.id = oi.order_id
+    where o.customer_id = tests.get_supabase_uid('customer_2') and oi.item_name = 'Pica'$$,
+  $$select null::uuid, 'Pica', 500.00$$,
+  'the order line survives the delete with menu_item_id set null and its snapshot untouched'
 );
 
 select * from finish();
