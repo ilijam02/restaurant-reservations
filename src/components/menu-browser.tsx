@@ -54,7 +54,10 @@ export function MenuBrowser({
   const router = useRouter();
   const [orderId, setOrderId] = useState(initialOrderId);
   const [cartItems, setCartItems] = useState<CartItem[]>(initialCartItems);
-  const [cartOpen, setCartOpen] = useState(false);
+  // Returning to a restaurant with items already in the cart should show
+  // the cart right away, not require re-discovering the toggle - a fresh,
+  // empty cart still starts collapsed since there's nothing to show yet.
+  const [cartOpen, setCartOpen] = useState(initialCartItems.length > 0);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
