@@ -92,7 +92,7 @@ select results_eq(
 );
 
 select results_eq(
-  $$select public.start_cart((select id from public.restaurants where name = 'A''s Bistro'))$$,
+  $$select (public.start_cart((select id from public.restaurants where name = 'A''s Bistro'))).id$$,
   $$select id from public.orders where customer_id = tests.get_supabase_uid('customer_1')$$,
   'calling start_cart again for the same restaurant returns the same draft, not a new one'
 );
@@ -430,6 +430,15 @@ select lives_ok(
   'customer_2 adds an item to their own cart'
 );
 
+-- Captured while still authenticated as customer_2 - a plain select for
+-- "customer_2's order id" while authenticated as customer_1 below would
+-- return nothing at all (orders RLS hides it), which would make
+-- create_reservation() receive a null p_order_id and silently skip the
+-- whole order-ownership check instead of actually exercising it. Stashing
+-- the id in a session GUC stands in for a realistic attacker who already
+-- has the id from some other source (a guess, a leak, a replayed request).
+select set_config('tests.customer_2_order_id', (select id::text from public.orders where customer_id = tests.get_supabase_uid('customer_2')), true);
+
 select tests.authenticate_as('customer_1');
 select throws_ok(
   $$select public.create_reservation(
@@ -439,7 +448,7 @@ select throws_ok(
       60,
       null,
       null,
-      (select id from public.orders where customer_id = tests.get_supabase_uid('customer_2'))
+      current_setting('tests.customer_2_order_id')::uuid
     )$$,
   'P0001',
   'Porudžbina ne postoji.',
