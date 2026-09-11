@@ -28,8 +28,12 @@ type DraftOption = { key: string; name: string; isRequired: boolean; allowMultip
 
 const SAVE_ERROR = "Čuvanje stavke nije uspelo. Pokušajte ponovo.";
 
-const INPUT_CLASSES =
-  "w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500";
+// Widthless so it can be combined with a sizing class (flex-1, w-28, ...)
+// without conflicting with it - INPUT_CLASSES below adds w-full for the
+// common case of a field that isn't sharing a flex row with another input.
+const INPUT_FIELD_CLASSES =
+  "rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500";
+const INPUT_CLASSES = `w-full ${INPUT_FIELD_CLASSES}`;
 
 function emptyChoice(): DraftChoice {
   return { key: crypto.randomUUID(), name: "", priceDelta: "0" };
@@ -43,7 +47,6 @@ export function MenuItemEditor({
   restaurantId,
   categories,
   item,
-  defaultCategoryId,
   nextDisplayOrder,
   onSaved,
   onCancel,
@@ -51,9 +54,6 @@ export function MenuItemEditor({
   restaurantId: string;
   categories: { id: string; name: string }[];
   item: MenuItemRow | null;
-  // Only used for a new item (item === null) - preselects the category of
-  // the group whose "Dodaj stavku" button opened this editor.
-  defaultCategoryId?: string | null;
   // Only used for a new item - one past the highest existing display_order
   // across the restaurant's items, so a freshly added item sorts after
   // everything else instead of tying at the column's default of 0 (which
@@ -66,7 +66,7 @@ export function MenuItemEditor({
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
   const [price, setPrice] = useState(item ? item.price.toString() : "");
-  const [categoryId, setCategoryId] = useState(item ? (item.category_id ?? "") : (defaultCategoryId ?? ""));
+  const [categoryId, setCategoryId] = useState(item?.category_id ?? "");
   const [isAvailable, setIsAvailable] = useState(item?.is_available ?? true);
   const [options, setOptions] = useState<DraftOption[]>(() =>
     item
@@ -288,7 +288,7 @@ export function MenuItemEditor({
                 placeholder="Naziv grupe (npr. Veličina)"
                 value={option.name}
                 onChange={(e) => updateOption(option.key, { name: e.target.value })}
-                className={INPUT_CLASSES}
+                className={`${INPUT_FIELD_CLASSES} min-w-0 flex-1`}
               />
               <button
                 type="button"
@@ -332,7 +332,7 @@ export function MenuItemEditor({
                     placeholder="Izbor (npr. Velika)"
                     value={choice.name}
                     onChange={(e) => updateChoice(option.key, choice.key, { name: e.target.value })}
-                    className={`${INPUT_CLASSES} flex-1`}
+                    className={`${INPUT_FIELD_CLASSES} min-w-0 flex-1`}
                   />
                   <label htmlFor={`choice-price-${choice.key}`} className="sr-only">
                     Doplata
@@ -344,7 +344,7 @@ export function MenuItemEditor({
                     placeholder="Doplata"
                     value={choice.priceDelta}
                     onChange={(e) => updateChoice(option.key, choice.key, { priceDelta: e.target.value })}
-                    className={`${INPUT_CLASSES} w-28`}
+                    className={`${INPUT_FIELD_CLASSES} w-28 shrink-0`}
                   />
                   <button
                     type="button"

@@ -28,15 +28,30 @@ export function MenuItemsManager({
   // "new" for the add-item form, an item id for editing that item, or null
   // for nothing open - only one editor open at a time.
   const [openEditor, setOpenEditor] = useState<string | null>(null);
+  // Optimistic overrides for the availability checkbox, keyed by item id -
+  // items are otherwise props-driven with no local list state, but the
+  // checkbox needs to flip the instant it's clicked rather than waiting on
+  // the Supabase round-trip + router.refresh() (which takes ~1s and made
+  // the checkbox feel laggy). Cleared on error (reverting the toggle);
+  // left in place on success since it already matches what the refreshed
+  // props will show.
+  const [optimisticAvailable, setOptimisticAvailable] = useState<Record<string, boolean>>({});
 
   async function handleToggleAvailable(item: MenuItemRow) {
     setError(null);
+    const next = !item.is_available;
+    setOptimisticAvailable((prev) => ({ ...prev, [item.id]: next }));
     setPendingId(item.id);
     const supabase = createClient();
-    const { error } = await supabase.from("menu_items").update({ is_available: !item.is_available }).eq("id", item.id);
+    const { error } = await supabase.from("menu_items").update({ is_available: next }).eq("id", item.id);
     setPendingId(null);
 
     if (error) {
+      setOptimisticAvailable((prev) => {
+        const rest = { ...prev };
+        delete rest[item.id];
+        return rest;
+      });
       setError(SAVE_ERROR);
       return;
     }
@@ -66,19 +81,36 @@ export function MenuItemsManager({
     ...categories.map((category) => ({
       key: category.id,
       name: category.name,
-      categoryId: category.id as string | null,
       items: items.filter((item) => item.category_id === category.id),
     })),
     {
       key: UNCATEGORIZED_KEY,
       name: "Bez kategorije",
-      categoryId: null,
       items: items.filter((item) => item.category_id === null),
     },
   ];
 
   return (
     <div className="w-full space-y-6">
+      {openEditor === "new" ? (
+        <MenuItemEditor
+          restaurantId={restaurantId}
+          categories={categories}
+          item={null}
+          nextDisplayOrder={items.length ? Math.max(...items.map((i) => i.display_order)) + 1 : 0}
+          onSaved={handleSaved}
+          onCancel={() => setOpenEditor(null)}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpenEditor("new")}
+          className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
+        >
+          Dodaj stavku
+        </button>
+      )}
+
       {groups.map((group) => (
         <section key={group.key} className="space-y-2">
           <h2 className="text-xl font-semibold">{group.name}</h2>
@@ -102,7 +134,7 @@ export function MenuItemsManager({
                     <label className="flex shrink-0 items-center gap-1.5 text-xs text-stone-600 dark:text-stone-400">
                       <input
                         type="checkbox"
-                        checked={item.is_available}
+                        checked={optimisticAvailable[item.id] ?? item.is_available}
                         disabled={pendingId === item.id}
                         onChange={() => handleToggleAvailable(item)}
                         className="size-4 rounded border-stone-300 accent-accent dark:border-stone-600"
@@ -140,26 +172,6 @@ export function MenuItemsManager({
                 </li>
               ))}
             </ul>
-          )}
-
-          {openEditor === `new-${group.key}` ? (
-            <MenuItemEditor
-              restaurantId={restaurantId}
-              categories={categories}
-              item={null}
-              defaultCategoryId={group.categoryId}
-              nextDisplayOrder={items.length ? Math.max(...items.map((i) => i.display_order)) + 1 : 0}
-              onSaved={handleSaved}
-              onCancel={() => setOpenEditor(null)}
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setOpenEditor(`new-${group.key}`)}
-              className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
-            >
-              Dodaj stavku
-            </button>
           )}
         </section>
       ))}
