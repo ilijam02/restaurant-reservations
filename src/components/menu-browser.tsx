@@ -375,7 +375,8 @@ export function MenuBrowser({
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800">
         <div className="mx-auto flex max-w-2xl flex-col gap-3">
           {cartOpen && (
-            <div className="max-h-64 overflow-y-auto">
+            // 20% shorter than the default max-h-64 (16rem) - 12.8rem.
+            <div className="max-h-[12.8rem] overflow-y-auto">
               <CartSummary
                 items={cartItems}
                 mode="editable"

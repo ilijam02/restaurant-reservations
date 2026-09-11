@@ -58,6 +58,31 @@ export function MenuItemsManager({
     router.refresh();
   }
 
+  // groupItems is that item's own category group (or the uncategorized
+  // group), already in display order - moving within it, not the flat
+  // items list, so the swap only ever happens against the visible neighbor
+  // in that same group.
+  async function handleMoveItem(groupItems: MenuItemRow[], index: number, direction: -1 | 1) {
+    const current = groupItems[index];
+    const other = groupItems[index + direction];
+    if (!other) return;
+
+    setError(null);
+    setPendingId(current.id);
+    const supabase = createClient();
+    const [{ error: currentError }, { error: otherError }] = await Promise.all([
+      supabase.from("menu_items").update({ display_order: other.display_order }).eq("id", current.id),
+      supabase.from("menu_items").update({ display_order: current.display_order }).eq("id", other.id),
+    ]);
+    setPendingId(null);
+
+    if (currentError || otherError) {
+      setError(SAVE_ERROR);
+      return;
+    }
+    router.refresh();
+  }
+
   async function handleDelete(id: string) {
     setError(null);
     setPendingId(id);
@@ -119,9 +144,29 @@ export function MenuItemsManager({
             <p className="text-sm text-stone-600 dark:text-stone-400">Nema stavki u ovoj kategoriji.</p>
           ) : (
             <ul className="space-y-2">
-              {group.items.map((item) => (
+              {group.items.map((item, index) => (
                 <li key={item.id}>
                   <div className="flex items-center gap-3 rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-700 dark:bg-stone-800">
+                    <div className="flex shrink-0 flex-col">
+                      <button
+                        type="button"
+                        aria-label="Pomeri gore"
+                        disabled={index === 0 || pendingId === item.id}
+                        onClick={() => handleMoveItem(group.items, index, -1)}
+                        className="rounded-t-md border border-b-0 border-stone-300 px-1.5 text-xs hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-stone-600 dark:hover:bg-stone-700"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Pomeri dole"
+                        disabled={index === group.items.length - 1 || pendingId === item.id}
+                        onClick={() => handleMoveItem(group.items, index, 1)}
+                        className="rounded-b-md border border-stone-300 px-1.5 text-xs hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-stone-600 dark:hover:bg-stone-700"
+                      >
+                        ▼
+                      </button>
+                    </div>
                     <MenuItemImage
                       imageUrl={null}
                       alt={item.name}
