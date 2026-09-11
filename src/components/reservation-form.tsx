@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TablePicker, type PickableTable } from "@/components/table-picker";
+import { CartSummary, cartTotal, formatPrice, type CartItem } from "@/components/cart-summary";
 
 type Restaurant = {
   id: string;
@@ -57,12 +59,16 @@ export function ReservationForm({
   sections,
   layouts,
   tables,
+  orderId,
+  cartItems,
 }: {
   restaurant: Restaurant;
   hours: HoursRow[];
   sections: SectionRow[];
   layouts: LayoutRow[];
   tables: TableRow[];
+  orderId: string | null;
+  cartItems: CartItem[];
 }) {
   const [startsAt, setStartsAt] = useState("");
   const [partySize, setPartySize] = useState("2");
@@ -203,6 +209,7 @@ export function ReservationForm({
       p_stay_minutes: stayMinutes ? Number(stayMinutes) : null,
       p_section_id: hasTables ? null : sectionId || null,
       p_table_ids: hasTables ? selectedTableIds : null,
+      p_order_id: cartItems.length > 0 ? orderId : null,
     });
 
     if (rpcError || !data) {
@@ -244,8 +251,12 @@ export function ReservationForm({
 
     setLoading(false);
     const confirmedAt = new Date(data.starts_at);
+    // Not "je plaćena" (is paid) - there's no real payment integration yet
+    // (see the placeholder card above the submit button), so claiming a
+    // charge went through would be actively misleading.
+    const orderText = cartItems.length > 0 ? ` Porudžbina u iznosu od ${formatPrice(cartTotal(cartItems))} je zabeležena.` : "";
     setConfirmation(
-      `Potvrđeno: rezervacija za ${confirmedAt.toLocaleDateString("sr-RS")} u ${confirmedAt.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.${assignedText}`,
+      `Potvrđeno: rezervacija za ${confirmedAt.toLocaleDateString("sr-RS")} u ${confirmedAt.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.${assignedText}${orderText}`,
     );
     setStartsAt("");
     setStayMinutes("");
@@ -385,6 +396,28 @@ export function ReservationForm({
           </div>
         )}
 
+        <div className="space-y-2 border-t border-stone-200 pt-4 dark:border-stone-700">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">Porudžbina</h3>
+            <Link
+              href={`/customer/restaurants/${restaurant.id}`}
+              className="text-sm text-orange-700 hover:underline dark:text-accent"
+            >
+              ← Izmeni porudžbinu
+            </Link>
+          </div>
+          <CartSummary items={cartItems} mode="readonly" />
+        </div>
+
+        {cartItems.length > 0 && (
+          <div className="space-y-2 rounded-md border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900/40">
+            <h3 className="text-sm font-medium">Plaćanje karticom</h3>
+            <p className="text-sm text-stone-600 dark:text-stone-400">
+              Integracija plaćanja uskoro dolazi - trenutno se samo simulira.
+            </p>
+          </div>
+        )}
+
         {error && (
           <p role="alert" className="text-sm text-red-600 dark:text-red-400">
             {error}
@@ -402,7 +435,7 @@ export function ReservationForm({
           disabled={loading}
           className="w-full rounded-md bg-accent px-3 py-2 text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
         >
-          {loading ? "Rezervisanje..." : "Rezerviši"}
+          {loading ? "Obrada..." : cartItems.length > 0 ? "Plati i potvrdi rezervaciju" : "Rezerviši"}
         </button>
       </form>
     </div>
