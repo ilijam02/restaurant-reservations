@@ -574,6 +574,9 @@ select lives_ok(
   'deleting a menu item that has an existing (draft) order line still succeeds'
 );
 
+-- The order is still a draft, so only customer_2 themselves (not owner_a)
+-- can see this row at all under order_items' select policies.
+select tests.authenticate_as('customer_2');
 select results_eq(
   $$select menu_item_id, item_name, unit_price from public.order_items oi
     join public.orders o on o.id = oi.order_id
