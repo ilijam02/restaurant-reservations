@@ -45,6 +45,14 @@ const LAYOUT_MISSING_SECTION_ERROR = "Svi stolovi u aktivnim rasporedima moraju 
 const DEFAULT_STAY_MINUTES_RANGE_ERROR = "Trajanje rezervacije mora biti između 30 i 180 minuta.";
 const SAVE_ERROR = "Čuvanje izmena nije uspelo. Pokušajte ponovo.";
 
+// A raised `P0001` (plain `raise exception`) is one of this project's own
+// deliberate business-rule messages (see e.g. prevent_table_delete_with_active_reservation()
+// in 20260913140000_protect_capacity_from_active_reservations.sql) - already
+// Serbian and specific, so show it verbatim instead of the generic fallback.
+function raisedMessageOr(error: { code?: string; message: string } | null, fallback: string) {
+  return error?.code === "P0001" ? error.message : fallback;
+}
+
 function initialBlocks(hours: HoursRow[]): HourBlock[] {
   return hours.map((h) => ({
     id: crypto.randomUUID(),
@@ -251,7 +259,7 @@ export function EditRestaurantForm({
 
     if (deleteLayoutsError) {
       setLoading(false);
-      setError(SAVE_ERROR);
+      setError(raisedMessageOr(deleteLayoutsError, SAVE_ERROR));
       return;
     }
 
@@ -314,7 +322,7 @@ export function EditRestaurantForm({
 
     if (deleteSectionsError) {
       setLoading(false);
-      setError(SECTIONS_SAVE_ERROR);
+      setError(raisedMessageOr(deleteSectionsError, SECTIONS_SAVE_ERROR));
       return;
     }
 
@@ -371,7 +379,9 @@ export function EditRestaurantForm({
 
     if (sectionsError) {
       setLoading(false);
-      setError(sectionsError.code === "23505" ? DUPLICATE_SECTION_NAME_ERROR : SECTIONS_SAVE_ERROR);
+      setError(
+        sectionsError.code === "23505" ? DUPLICATE_SECTION_NAME_ERROR : raisedMessageOr(sectionsError, SECTIONS_SAVE_ERROR),
+      );
       return;
     }
 
@@ -410,7 +420,7 @@ export function EditRestaurantForm({
 
       if (deleteTablesError) {
         setLoading(false);
-        setError(SAVE_ERROR);
+        setError(raisedMessageOr(deleteTablesError, SAVE_ERROR));
         return;
       }
 
@@ -497,7 +507,7 @@ export function EditRestaurantForm({
 
       if (capacityError) {
         setLoading(false);
-        setError(SAVE_ERROR);
+        setError(raisedMessageOr(capacityError, SAVE_ERROR));
         return;
       }
     }
