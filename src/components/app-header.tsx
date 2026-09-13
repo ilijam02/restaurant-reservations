@@ -8,7 +8,13 @@ import { createClient } from "@/lib/supabase/client";
 const ICON_BUTTON_CLASSES =
   "flex h-10 w-10 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-900 hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:hover:bg-stone-700 dark:focus-visible:ring-offset-stone-900";
 
-export function AppHeader({ backHref }: { backHref?: string }) {
+export function AppHeader({
+  backHref,
+  menuItems = [],
+}: {
+  backHref?: string;
+  menuItems?: { label: string; href: string }[];
+}) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -66,6 +72,16 @@ export function AppHeader({ backHref }: { backHref?: string }) {
 
         {menuOpen && (
           <div className="absolute top-12 left-0 min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-sm dark:border-stone-700 dark:bg-stone-800">
+            {menuItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMenuOpen(false)}
+                className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-stone-700"
+              >
+                {item.label}
+              </Link>
+            ))}
             <button
               type="button"
               onClick={handleLogout}
