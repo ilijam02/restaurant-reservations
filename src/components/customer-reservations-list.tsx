@@ -39,10 +39,19 @@ function isCurrent(reservation: ReservationRow, now: Date) {
   return reservation.status === "confirmed" && new Date(reservation.ends_at).getTime() >= now.getTime();
 }
 
+// Explicit timeZone, matching create_reservation()'s own hardcoded
+// 'Europe/Belgrade' conversion (see create_reservations.sql) - without it,
+// this would render in whatever timezone the customer's device happens to be
+// set to instead of the restaurant's actual local time, and would also mismatch
+// between server render and client hydration whenever they're in different zones.
 function formatDateTime(iso: string) {
   const date = new Date(iso);
-  const day = date.toLocaleDateString("sr-RS");
-  const time = date.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" });
+  const day = date.toLocaleDateString("sr-RS", { timeZone: "Europe/Belgrade" });
+  const time = date.toLocaleTimeString("sr-RS", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Belgrade",
+  });
   return `${day} ${time}`;
 }
 
@@ -110,17 +119,22 @@ function ReservationCard({ reservation }: { reservation: ReservationRow }) {
   );
 }
 
-export function CustomerReservationsList({ reservations }: { reservations: ReservationRow[] }) {
+// `now` is computed once by the server-component caller and passed down as a
+// prop (rather than each client calling `new Date()` itself) so the initial
+// server render and the client hydration pass classify reservations
+// identically - a `new Date()` call here would risk a reservation flipping
+// current/past between the two if its ends_at fell in between.
+export function CustomerReservationsList({ reservations, now }: { reservations: ReservationRow[]; now: string }) {
   if (reservations.length === 0) {
     return <p className="text-stone-600 dark:text-stone-400">Trenutno nemate rezervacija.</p>;
   }
 
-  const now = new Date();
+  const nowDate = new Date(now);
   const current = reservations
-    .filter((r) => isCurrent(r, now))
+    .filter((r) => isCurrent(r, nowDate))
     .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
   const past = reservations
-    .filter((r) => !isCurrent(r, now))
+    .filter((r) => !isCurrent(r, nowDate))
     .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
 
   return (

@@ -18,11 +18,16 @@ export default async function CustomerReservationsPage() {
     )
     .order("starts_at", { ascending: false });
 
+  // Computed once here rather than inside the client list component, so the
+  // server render and the client hydration pass classify current/past
+  // identically - see CustomerReservationsList's own comment on `now`.
+  const now = new Date().toISOString();
+
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref="/customer" />
       <h1 className="text-3xl font-bold">Moje rezervacije</h1>
-      <CustomerReservationsList reservations={(reservations as unknown as ReservationRow[] | null) ?? []} />
+      <CustomerReservationsList reservations={(reservations as unknown as ReservationRow[] | null) ?? []} now={now} />
     </main>
   );
 }
