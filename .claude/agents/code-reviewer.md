@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Use to review a diff, branch, or PR against this project's specific risk areas — RLS policy correctness, Server Action auth, Supabase client/server boundary, migration safety, and the dark-mode/design-system conventions in CLAUDE.md. Read-only: reports findings, does not edit files. Do NOT use for open-ended research (use research) or for locating code (use Explore).
+description: Use to review a diff, branch, or PR against this project's specific risk areas — RLS policy correctness, Server Action auth, Supabase client/server boundary, migration safety, and the dark-mode/design-system conventions in CLAUDE.md. Read-only — reports findings, does not edit files. Do NOT use for open-ended research (use research) or for locating code (use Explore).
 tools: Read, Grep, Glob, Bash
 ---
 
