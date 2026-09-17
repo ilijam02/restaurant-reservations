@@ -45,6 +45,66 @@ const LAYOUT_MISSING_SECTION_ERROR = "Svi stolovi u aktivnim rasporedima moraju 
 const DEFAULT_STAY_MINUTES_RANGE_ERROR = "Trajanje rezervacije mora biti između 30 i 180 minuta.";
 const SAVE_ERROR = "Čuvanje izmena nije uspelo. Pokušajte ponovo.";
 
+// A raised `P0001` (plain `raise exception`) is one of this project's own
+// deliberate business-rule messages (see e.g. prevent_table_delete_with_active_reservation()
+// in 20260913140000_protect_capacity_from_active_reservations.sql) - already
+// Serbian and specific, so show it verbatim instead of the generic fallback.
+function raisedMessageOr(error: { code?: string; message: string } | null, fallback: string) {
+  return error?.code === "P0001" ? error.message : fallback;
+}
+
+// Matches customer-reservations-list.tsx's own formatDateTime - duplicated
+// rather than imported, since that component lives under the customer role
+// and this form is owner-facing (see CLAUDE.md's role-folder separation
+// convention); there's no shared date util yet either way.
+function formatReservationDateTime(iso: string) {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString("sr-RS", { timeZone: "Europe/Belgrade" });
+  const time = date.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Belgrade" });
+  return `${day} ${time}`;
+}
+
+function guestCountLabel(partySize: number) {
+  return `${partySize} ${partySize === 1 ? "gost" : "gostiju"}`;
+}
+
+type ActiveReservationBlocker = { starts_at: string; party_size: number };
+type BlockedTableRow = ActiveReservationBlocker & { table_name: string; layout_name: string };
+
+function describeBlockedTable(r: BlockedTableRow) {
+  return `"${r.table_name}" (${formatReservationDateTime(r.starts_at)}, ${guestCountLabel(r.party_size)})`;
+}
+
+// Table names are only unique per layout, not per restaurant (two layouts
+// can each have their own "Sto 1") - once a save spans more than one
+// layout, a flat list would be ambiguous about which layout a given table
+// belongs to, so group by layout in that case. A single layout keeps the
+// simpler flat list, since there's nothing to disambiguate.
+function describeBlockedTables(rows: BlockedTableRow[]) {
+  const layoutNames = Array.from(new Set(rows.map((r) => r.layout_name)));
+
+  const list =
+    layoutNames.length <= 1
+      ? rows.map(describeBlockedTable).join(", ")
+      : layoutNames
+          .map((layoutName) => `${layoutName}: ${rows.filter((r) => r.layout_name === layoutName).map(describeBlockedTable).join(", ")}`)
+          .join("; ");
+
+  return `Sledeći stolovi imaju aktivnu rezervaciju i ne mogu biti obrisani: ${list}.`;
+}
+
+function describeBlockedSections(rows: (ActiveReservationBlocker & { section_name: string })[]) {
+  const list = rows
+    .map((r) => `"${r.section_name}" (${formatReservationDateTime(r.starts_at)}, ${guestCountLabel(r.party_size)})`)
+    .join(", ");
+  return `Sledeće sekcije imaju aktivnu rezervaciju i ne mogu biti obrisane: ${list}.`;
+}
+
+function describeSectionsBelowCapacity(rows: { section_name: string; peak_capacity: number }[]) {
+  const list = rows.map((r) => `"${r.section_name}" (potrebno najmanje ${r.peak_capacity})`).join(", ");
+  return `Kapacitet sledećih sekcija ne može biti manji od broja gostiju sa već potvrđenom rezervacijom: ${list}.`;
+}
+
 function initialBlocks(hours: HoursRow[]): HourBlock[] {
   return hours.map((h) => ({
     id: crypto.randomUUID(),
@@ -220,6 +280,70 @@ export function EditRestaurantForm({
       return;
     }
 
+    // Deletion pre-check: gather every table this save would actually
+    // delete - either directly, or via cascade from a whole layout being
+    // removed - and every section being removed, then ask the DB which of
+    // them still has an active reservation *before* attempting any delete.
+    // Without this, the .delete() calls further down would still be
+    // correctly rejected by the DB triggers, but only one table/section at a
+    // time (a trigger aborts the whole statement on the first row it finds),
+    // forcing the owner to retry repeatedly to discover the rest.
+    const removedLayoutIds = layouts.filter((orig) => !draftLayouts.some((d) => d.id === orig.id)).map((l) => l.id);
+    const tablesOnRemovedLayoutIds = tables.filter((t) => removedLayoutIds.includes(t.layout_id)).map((t) => t.id);
+
+    const originalTablesByLayoutId = new Map<string, TableRow[]>();
+    for (const t of tables) {
+      const bucket = originalTablesByLayoutId.get(t.layout_id) ?? [];
+      bucket.push(t);
+      originalTablesByLayoutId.set(t.layout_id, bucket);
+    }
+    // Only surviving *existing* layouts can have original tables to diff
+    // against - a brand new layout (id === null) can't have removed any
+    // table that was ever actually saved.
+    const removedTableIdsFromSurvivingLayouts = draftLayouts.flatMap((layout) => {
+      if (!layout.id) return [];
+      const draftTablesForLayout = tablesByLayoutKey[layout.key] ?? [];
+      const originalTablesForLayout = originalTablesByLayoutId.get(layout.id) ?? [];
+      return originalTablesForLayout
+        .filter((original) => !draftTablesForLayout.some((d) => d.id === original.id))
+        .map((t) => t.id);
+    });
+    const allRemovedTableIds = [...tablesOnRemovedLayoutIds, ...removedTableIdsFromSurvivingLayouts];
+
+    if (allRemovedTableIds.length) {
+      const { data: blockedTables } = await supabase.rpc("tables_with_active_reservations", {
+        p_table_ids: allRemovedTableIds,
+      });
+      if (blockedTables && blockedTables.length > 0) {
+        setLoading(false);
+        setError(describeBlockedTables(blockedTables));
+        return;
+      }
+    }
+
+    if (removedSectionIds.length) {
+      const { data: blockedSections } = await supabase.rpc("sections_with_active_reservations", {
+        p_section_ids: removedSectionIds,
+      });
+      if (blockedSections && blockedSections.length > 0) {
+        setLoading(false);
+        setError(describeBlockedSections(blockedSections));
+        return;
+      }
+    }
+
+    // originalSectionById/toUpdateSections are needed both by the capacity
+    // pre-check (deliberately run much later, right before the rename dance
+    // it protects - see that comment) and by the actual section mutations
+    // further down.
+    const originalSectionById = new Map(sections.map((s) => [s.id, s]));
+    const toUpdateSections = draftSections.filter((s): s is DraftSection & { id: string } => {
+      if (s.id === null) return false;
+      const original = originalSectionById.get(s.id);
+      if (!original) return true;
+      return original.name !== s.name || (!hasActiveLayouts && original.capacity !== Number(s.capacity));
+    });
+
     // Layouts: new ones first (real ids known before anything references
     // them, is_active included directly in the insert), then removed ones
     // (cascades their tables at the DB level).
@@ -244,14 +368,13 @@ export function EditRestaurantForm({
     });
     for (const l of draftLayouts) if (l.id) keyToRealLayoutId.set(l.key, l.id);
 
-    const removedLayoutIds = layouts.filter((orig) => !draftLayouts.some((d) => d.id === orig.id)).map((l) => l.id);
     const { error: deleteLayoutsError } = removedLayoutIds.length
       ? await supabase.from("layouts").delete().in("id", removedLayoutIds)
       : { error: null };
 
     if (deleteLayoutsError) {
       setLoading(false);
-      setError(SAVE_ERROR);
+      setError(raisedMessageOr(deleteLayoutsError, SAVE_ERROR));
       return;
     }
 
@@ -314,11 +437,10 @@ export function EditRestaurantForm({
 
     if (deleteSectionsError) {
       setLoading(false);
-      setError(SECTIONS_SAVE_ERROR);
+      setError(raisedMessageOr(deleteSectionsError, SECTIONS_SAVE_ERROR));
       return;
     }
 
-    const originalSectionById = new Map(sections.map((s) => [s.id, s]));
     const toInsertSections = draftSections
       .filter((s) => s.id === null)
       .map((s) => ({
@@ -327,22 +449,63 @@ export function EditRestaurantForm({
         capacity: hasActiveLayouts ? 0 : Number(s.capacity),
         color_index: s.colorIndex,
       }));
-    // Only rows that actually changed - skips unnecessary writes, and keeps
-    // the temp-rename dance below limited to rows that need it.
-    const toUpdateSections = draftSections.filter((s): s is DraftSection & { id: string } => {
-      if (s.id === null) return false;
-      const original = originalSectionById.get(s.id);
-      if (!original) return true;
-      return original.name !== s.name || (!hasActiveLayouts && original.capacity !== Number(s.capacity));
-    });
+
+    // Section capacity pre-check: deliberately run here, immediately before
+    // the rename-then-update dance it protects, rather than up at the top
+    // with the other early pre-checks - the actual capacity+name update
+    // below is preceded by a rename-to-temp-placeholder step (for rows that
+    // need it) committed as its own statement with nothing to roll it back
+    // if the real update then fails, so a section whose capacity decrease
+    // gets rejected would otherwise be left stuck on that temp name. Placing
+    // this check right next to that risk, rather than several unrelated
+    // awaited calls (layouts, hours, restaurant name) earlier, minimizes -
+    // without fully eliminating - the window in which a new reservation
+    // could land between "checked safe" and "written," which would let the
+    // real update fail anyway despite passing here. Reports every offending
+    // section in one message either way.
+    if (!hasActiveLayouts) {
+      const sectionsWithCapacityChange = toUpdateSections.filter(
+        (s) => originalSectionById.get(s.id)?.capacity !== Number(s.capacity),
+      );
+      if (sectionsWithCapacityChange.length) {
+        const { data: sectionPeaks } = await supabase.rpc("sections_peak_reserved_capacity", {
+          p_section_ids: sectionsWithCapacityChange.map((s) => s.id),
+        });
+        const peakBySectionId = new Map(
+          ((sectionPeaks ?? []) as { section_id: string; section_name: string; peak_capacity: number }[]).map((row) => [
+            row.section_id,
+            row,
+          ]),
+        );
+        const belowCapacity = sectionsWithCapacityChange
+          .map((s) => peakBySectionId.get(s.id))
+          .filter((row): row is { section_id: string; section_name: string; peak_capacity: number } => !!row)
+          .filter((row) => {
+            const draft = sectionsWithCapacityChange.find((s) => s.id === row.section_id);
+            return !!draft && Number(draft.capacity) < row.peak_capacity;
+          });
+
+        if (belowCapacity.length > 0) {
+          setLoading(false);
+          setError(describeSectionsBelowCapacity(belowCapacity));
+          return;
+        }
+      }
+    }
 
     // Renaming sections can swap names between two existing rows, which the
     // unique (restaurant_id, name) constraint would reject if applied
-    // directly - stage every changed row through a guaranteed-unique temp
-    // name first so no two writes here can transiently collide.
-    const stageRenameResults = toUpdateSections.length
+    // directly - stage every row whose name is actually changing through a
+    // guaranteed-unique temp name first so no two writes here can
+    // transiently collide. Only rows with an actual name change go through
+    // this (not every row in toUpdateSections, which also includes
+    // capacity-only changes) - narrows the window between this statement and
+    // the real update below (see the capacity pre-check's own comment on the
+    // race it can't fully close) to just the cases that genuinely need it.
+    const sectionsNeedingRename = toUpdateSections.filter((s) => originalSectionById.get(s.id)?.name !== s.name);
+    const stageRenameResults = sectionsNeedingRename.length
       ? await Promise.all(
-          toUpdateSections.map((s) => supabase.from("sections").update({ name: `__tmp_${s.id}` }).eq("id", s.id)),
+          sectionsNeedingRename.map((s) => supabase.from("sections").update({ name: `__tmp_${s.id}` }).eq("id", s.id)),
         )
       : [];
     const stageRenameError = stageRenameResults.map((r) => r.error).find((e) => e !== null) ?? null;
@@ -371,7 +534,9 @@ export function EditRestaurantForm({
 
     if (sectionsError) {
       setLoading(false);
-      setError(sectionsError.code === "23505" ? DUPLICATE_SECTION_NAME_ERROR : SECTIONS_SAVE_ERROR);
+      setError(
+        sectionsError.code === "23505" ? DUPLICATE_SECTION_NAME_ERROR : raisedMessageOr(sectionsError, SECTIONS_SAVE_ERROR),
+      );
       return;
     }
 
@@ -386,13 +551,7 @@ export function EditRestaurantForm({
     // Tables: reconcile every surviving layout's draft against what it had
     // originally, not just the one open on the canvas - the owner may have
     // edited several layouts in this same session before saving.
-    const originalTablesByLayoutId = new Map<string, TableRow[]>();
-    for (const t of tables) {
-      const bucket = originalTablesByLayoutId.get(t.layout_id) ?? [];
-      bucket.push(t);
-      originalTablesByLayoutId.set(t.layout_id, bucket);
-    }
-
+    // (originalTablesByLayoutId was already built above, for the pre-check.)
     for (const layout of draftLayouts) {
       const realLayoutId = keyToRealLayoutId.get(layout.key);
       if (!realLayoutId) continue;
@@ -410,7 +569,7 @@ export function EditRestaurantForm({
 
       if (deleteTablesError) {
         setLoading(false);
-        setError(SAVE_ERROR);
+        setError(raisedMessageOr(deleteTablesError, SAVE_ERROR));
         return;
       }
 
@@ -497,7 +656,7 @@ export function EditRestaurantForm({
 
       if (capacityError) {
         setLoading(false);
-        setError(SAVE_ERROR);
+        setError(raisedMessageOr(capacityError, SAVE_ERROR));
         return;
       }
     }
