@@ -1,9 +1,16 @@
 -- Coverage for
--- supabase/migrations/20260913140000_protect_capacity_from_active_reservations.sql:
--- deleting a table/section, or shrinking restaurants.capacity/sections.capacity,
--- must be rejected while a confirmed, not-yet-ended reservation depends on
--- it, and allowed again once that reservation is cancelled (or, for the
--- capacity checks, once the new number is still large enough).
+-- supabase/migrations/20260913140000_protect_capacity_from_active_reservations.sql
+-- and 20260917100000_detailed_active_reservation_errors.sql: deleting a
+-- table/section, or shrinking restaurants.capacity/sections.capacity, must
+-- be rejected while a confirmed, not-yet-ended reservation depends on it,
+-- and allowed again once that reservation is cancelled (or, for the
+-- capacity checks, once the new number is still large enough). The
+-- tables_with_active_reservations()/sections_with_active_reservations()
+-- pre-check functions the owner's edit form calls before attempting any
+-- delete are covered directly, rather than by asserting the trigger's
+-- raised message text - that text now embeds a formatted reservation
+-- date/time, which would make an exact-string assertion here depend on
+-- exactly when the suite happens to run.
 --
 -- "Active" reservations here are created via create_reservation() as usual
 -- (starting in the future, same as every other test file); "no longer
@@ -12,7 +19,7 @@
 -- exercise through the app's own RPC surface (see ISSUES.md's Customer
 -- backlog).
 begin;
-select plan(17);
+select plan(20);
 
 select tests.create_supabase_user('owner_c', 'ownerc@test.com', null,
   '{"first_name":"Owner","last_name":"C","phone":"555-0007","role":"owner"}'::jsonb);
@@ -55,10 +62,29 @@ select lives_ok(
 );
 
 select tests.authenticate_as('owner_c');
+
+-- tables_with_active_reservations() is what the owner's edit form calls
+-- before attempting any delete, so it can report every blocker in one save
+-- instead of discovering them one .delete() at a time.
+select results_eq(
+  $$select table_name, party_size from public.tables_with_active_reservations(
+      array[(select id from public.tables where name = 'Sto A')]
+    )$$,
+  $$values ('Sto A'::text, 4)$$,
+  'tables_with_active_reservations reports Sto A (and its party size) as blocked'
+);
+
+select is_empty(
+  $$select table_id from public.tables_with_active_reservations(
+      array[(select id from public.tables where name = 'Sto B')]
+    )$$,
+  'tables_with_active_reservations reports nothing for an unbooked table'
+);
+
 select throws_ok(
   $$delete from public.tables where name = 'Sto A'$$,
   'P0001',
-  'Sto ima aktivnu rezervaciju i ne može biti obrisan.',
+  null,
   'deleting a table with an active reservation is rejected'
 );
 
@@ -104,7 +130,7 @@ select tests.authenticate_as('owner_c');
 select throws_ok(
   $$delete from public.layouts where name = 'Raspored 1'$$,
   'P0001',
-  'Sto ima aktivnu rezervaciju i ne može biti obrisan.',
+  null,
   'deleting a whole layout is rejected while one of its tables has an active reservation'
 );
 
@@ -191,10 +217,18 @@ select lives_ok(
   'shrinking section capacity down to exactly the peak booked load is allowed'
 );
 
+select results_eq(
+  $$select section_name, party_size from public.sections_with_active_reservations(
+      array[(select id from public.sections where name = 'Basta')]
+    )$$,
+  $$values ('Basta'::text, 7)$$,
+  'sections_with_active_reservations reports Basta (and its party size) as blocked'
+);
+
 select throws_ok(
   $$delete from public.sections where name = 'Basta'$$,
   'P0001',
-  'Sekcija ima aktivnu rezervaciju i ne može biti obrisana.',
+  null,
   'deleting a section with an active reservation is rejected'
 );
 

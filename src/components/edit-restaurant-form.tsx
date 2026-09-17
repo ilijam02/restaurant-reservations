@@ -53,6 +53,37 @@ function raisedMessageOr(error: { code?: string; message: string } | null, fallb
   return error?.code === "P0001" ? error.message : fallback;
 }
 
+// Matches customer-reservations-list.tsx's own formatDateTime - duplicated
+// rather than imported, since that component lives under the customer role
+// and this form is owner-facing (see CLAUDE.md's role-folder separation
+// convention); there's no shared date util yet either way.
+function formatReservationDateTime(iso: string) {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString("sr-RS", { timeZone: "Europe/Belgrade" });
+  const time = date.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Belgrade" });
+  return `${day} ${time}`;
+}
+
+function guestCountLabel(partySize: number) {
+  return `${partySize} ${partySize === 1 ? "gost" : "gostiju"}`;
+}
+
+type ActiveReservationBlocker = { starts_at: string; party_size: number };
+
+function describeBlockedTables(rows: (ActiveReservationBlocker & { table_name: string })[]) {
+  const list = rows
+    .map((r) => `"${r.table_name}" (${formatReservationDateTime(r.starts_at)}, ${guestCountLabel(r.party_size)})`)
+    .join(", ");
+  return `Sledeći stolovi imaju aktivnu rezervaciju i ne mogu biti obrisani: ${list}.`;
+}
+
+function describeBlockedSections(rows: (ActiveReservationBlocker & { section_name: string })[]) {
+  const list = rows
+    .map((r) => `"${r.section_name}" (${formatReservationDateTime(r.starts_at)}, ${guestCountLabel(r.party_size)})`)
+    .join(", ");
+  return `Sledeće sekcije imaju aktivnu rezervaciju i ne mogu biti obrisane: ${list}.`;
+}
+
 function initialBlocks(hours: HoursRow[]): HourBlock[] {
   return hours.map((h) => ({
     id: crypto.randomUUID(),
@@ -228,6 +259,58 @@ export function EditRestaurantForm({
       return;
     }
 
+    // Deletion pre-check: gather every table this save would actually
+    // delete - either directly, or via cascade from a whole layout being
+    // removed - and every section being removed, then ask the DB which of
+    // them still has an active reservation *before* attempting any delete.
+    // Without this, the .delete() calls further down would still be
+    // correctly rejected by the DB triggers, but only one table/section at a
+    // time (a trigger aborts the whole statement on the first row it finds),
+    // forcing the owner to retry repeatedly to discover the rest.
+    const removedLayoutIds = layouts.filter((orig) => !draftLayouts.some((d) => d.id === orig.id)).map((l) => l.id);
+    const tablesOnRemovedLayoutIds = tables.filter((t) => removedLayoutIds.includes(t.layout_id)).map((t) => t.id);
+
+    const originalTablesByLayoutId = new Map<string, TableRow[]>();
+    for (const t of tables) {
+      const bucket = originalTablesByLayoutId.get(t.layout_id) ?? [];
+      bucket.push(t);
+      originalTablesByLayoutId.set(t.layout_id, bucket);
+    }
+    // Only surviving *existing* layouts can have original tables to diff
+    // against - a brand new layout (id === null) can't have removed any
+    // table that was ever actually saved.
+    const removedTableIdsFromSurvivingLayouts = draftLayouts.flatMap((layout) => {
+      if (!layout.id) return [];
+      const draftTablesForLayout = tablesByLayoutKey[layout.key] ?? [];
+      const originalTablesForLayout = originalTablesByLayoutId.get(layout.id) ?? [];
+      return originalTablesForLayout
+        .filter((original) => !draftTablesForLayout.some((d) => d.id === original.id))
+        .map((t) => t.id);
+    });
+    const allRemovedTableIds = [...tablesOnRemovedLayoutIds, ...removedTableIdsFromSurvivingLayouts];
+
+    if (allRemovedTableIds.length) {
+      const { data: blockedTables } = await supabase.rpc("tables_with_active_reservations", {
+        p_table_ids: allRemovedTableIds,
+      });
+      if (blockedTables && blockedTables.length > 0) {
+        setLoading(false);
+        setError(describeBlockedTables(blockedTables));
+        return;
+      }
+    }
+
+    if (removedSectionIds.length) {
+      const { data: blockedSections } = await supabase.rpc("sections_with_active_reservations", {
+        p_section_ids: removedSectionIds,
+      });
+      if (blockedSections && blockedSections.length > 0) {
+        setLoading(false);
+        setError(describeBlockedSections(blockedSections));
+        return;
+      }
+    }
+
     // Layouts: new ones first (real ids known before anything references
     // them, is_active included directly in the insert), then removed ones
     // (cascades their tables at the DB level).
@@ -252,7 +335,6 @@ export function EditRestaurantForm({
     });
     for (const l of draftLayouts) if (l.id) keyToRealLayoutId.set(l.key, l.id);
 
-    const removedLayoutIds = layouts.filter((orig) => !draftLayouts.some((d) => d.id === orig.id)).map((l) => l.id);
     const { error: deleteLayoutsError } = removedLayoutIds.length
       ? await supabase.from("layouts").delete().in("id", removedLayoutIds)
       : { error: null };
@@ -396,13 +478,7 @@ export function EditRestaurantForm({
     // Tables: reconcile every surviving layout's draft against what it had
     // originally, not just the one open on the canvas - the owner may have
     // edited several layouts in this same session before saving.
-    const originalTablesByLayoutId = new Map<string, TableRow[]>();
-    for (const t of tables) {
-      const bucket = originalTablesByLayoutId.get(t.layout_id) ?? [];
-      bucket.push(t);
-      originalTablesByLayoutId.set(t.layout_id, bucket);
-    }
-
+    // (originalTablesByLayoutId was already built above, for the pre-check.)
     for (const layout of draftLayouts) {
       const realLayoutId = keyToRealLayoutId.get(layout.key);
       if (!realLayoutId) continue;
