@@ -1,18 +1,25 @@
 -- Coverage for supabase/migrations/20260913140000_protect_capacity_from_active_reservations.sql
--- and its three follow-ups (20260917100000_detailed_active_reservation_errors.sql,
+-- and its four follow-ups (20260917100000_detailed_active_reservation_errors.sql,
 -- 20260917110000_tables_with_active_reservations_layout_name.sql,
--- 20260917120000_sections_peak_reserved_capacity_batch.sql): deleting a
+-- 20260917120000_sections_peak_reserved_capacity_batch.sql,
+-- 20260917130000_scope_capacity_functions_to_owner.sql): deleting a
 -- table/section, or shrinking restaurants.capacity/sections.capacity, must
 -- be rejected while a confirmed, not-yet-ended reservation depends on it,
 -- and allowed again once that reservation is cancelled (or, for the
--- capacity checks, once the new number is still large enough). The
+-- capacity checks, once the new number is still large enough). G's Diner
+-- and H's Terrace each book two overlapping reservations specifically to
+-- exercise the sweep-line's actual point - summing overlapping reservations
+-- into one peak, not just checking each in isolation - rather than only the
+-- single-reservation case every other scenario in this file uses. The
 -- tables_with_active_reservations()/sections_with_active_reservations()/
 -- sections_peak_reserved_capacity() pre-check functions the owner's edit
 -- form calls before attempting any delete or section capacity decrease are
 -- covered directly, rather than by asserting the trigger's raised message
 -- text - that text now embeds a formatted reservation date/time, which
 -- would make an exact-string assertion here depend on exactly when the
--- suite happens to run.
+-- suite happens to run. All three are also owner-scoped (joined up to
+-- restaurants.owner_id = auth.uid()) as of the fourth migration above,
+-- directly tested below by calling them as customer_3 instead of owner_c.
 --
 -- "Active" reservations here are created via create_reservation() as usual
 -- (starting in the future, same as every other test file); "no longer
@@ -21,7 +28,7 @@
 -- exercise through the app's own RPC surface (see ISSUES.md's Customer
 -- backlog).
 begin;
-select plan(21);
+select plan(26);
 
 select tests.create_supabase_user('owner_c', 'ownerc@test.com', null,
   '{"first_name":"Owner","last_name":"C","phone":"555-0007","role":"owner"}'::jsonb);
@@ -86,6 +93,16 @@ select is_empty(
   'tables_with_active_reservations reports nothing for an unbooked table'
 );
 
+-- Cross-owner isolation (see the equivalent Basta check further down for
+-- the full explanation): tables_with_active_reservations() must not reveal
+-- Sto A's reservation to a caller with no ownership of F's Bistro.
+select tests.authenticate_as('customer_3');
+select is_empty(
+  $$select * from public.tables_with_active_reservations(array[(select id from public.tables where name = 'Sto A')])$$,
+  'tables_with_active_reservations reveals nothing to a customer with no ownership of the restaurant'
+);
+
+select tests.authenticate_as('owner_c');
 select throws_ok(
   $$delete from public.tables where name = 'Sto A'$$,
   'P0001',
@@ -163,20 +180,35 @@ select lives_ok(
       (date_trunc('day', now()) + interval '1 day 12 hours'),
       60
     )$$,
-  'customer_3 books 6 of 10 seats at G''s Diner for tomorrow'
+  'customer_3 books 6 of 10 seats at G''s Diner for tomorrow, 12:00-13:00'
+);
+
+-- Overlaps the first booking (12:30-13:30 vs 12:00-13:00) without exceeding
+-- the restaurant's raw 10-seat capacity on its own - same sweep-line point
+-- as H's Terrace below, exercised independently here since
+-- restaurant_peak_reserved_capacity() and section_peak_reserved_capacity()
+-- are separate SQL bodies, not shared code.
+select lives_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'G''s Diner'),
+      3,
+      (date_trunc('day', now()) + interval '1 day 12 hours 30 minutes'),
+      60
+    )$$,
+  'customer_3 books 3 more, overlapping the first booking by 30 minutes'
 );
 
 select tests.authenticate_as('owner_c');
 select throws_ok(
-  $$update public.restaurants set capacity = 5 where name = 'G''s Diner'$$,
+  $$update public.restaurants set capacity = 8 where name = 'G''s Diner'$$,
   'P0001',
-  'Kapacitet ne može biti manji od 6 - toliko gostiju već ima potvrđenu rezervaciju u istom terminu.',
-  'shrinking restaurant capacity below the peak already-booked load is rejected'
+  'Kapacitet ne može biti manji od 9 - toliko gostiju već ima potvrđenu rezervaciju u istom terminu.',
+  'shrinking restaurant capacity below the summed peak load (6 + 3 = 9) is rejected'
 );
 
 select lives_ok(
-  $$update public.restaurants set capacity = 6 where name = 'G''s Diner'$$,
-  'shrinking capacity down to exactly the peak booked load is allowed'
+  $$update public.restaurants set capacity = 9 where name = 'G''s Diner'$$,
+  'shrinking capacity down to exactly the summed peak load is allowed'
 );
 
 select lives_ok(
@@ -206,7 +238,40 @@ select lives_ok(
       (date_trunc('day', now()) + interval '1 day 12 hours'),
       60
     )$$,
-  'customer_3 books 7 of Basta''s 10 seats for tomorrow'
+  'customer_3 books 7 of Basta''s 10 seats for tomorrow, 12:00-13:00'
+);
+
+-- Overlaps the first booking (12:30-13:30 vs 12:00-13:00, overlapping
+-- 12:30-13:00) without exceeding Basta's raw 10-seat capacity on its own -
+-- this is the actual point of the sweep-line: the two reservations' party
+-- sizes (7 + 2 = 9) must be summed for the overlap window, not just each
+-- checked against capacity individually.
+select lives_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'H''s Terrace'),
+      2,
+      (date_trunc('day', now()) + interval '1 day 12 hours 30 minutes'),
+      60
+    )$$,
+  'customer_3 books 2 more, overlapping the first booking by 30 minutes'
+);
+
+-- Cross-owner isolation: these three pre-check functions are security
+-- definer and were originally granted to authenticated with no ownership
+-- check at all, so any logged-in customer or employee could pass an
+-- arbitrary table/section id (freely enumerable - tables/sections are
+-- public-read) and learn a stranger's reservation time/party size,
+-- bypassing the RLS that otherwise protects it. Fixed in
+-- 20260917130000_scope_capacity_functions_to_owner.sql; still
+-- authenticated as customer_3 (who has no relationship to H's Terrace at
+-- all) here to prove it stays fixed.
+select is_empty(
+  $$select * from public.sections_peak_reserved_capacity(array[(select id from public.sections where name = 'Basta')])$$,
+  'sections_peak_reserved_capacity reveals nothing to a customer with no ownership of the restaurant'
+);
+select is_empty(
+  $$select * from public.sections_with_active_reservations(array[(select id from public.sections where name = 'Basta')])$$,
+  'sections_with_active_reservations reveals nothing to a customer with no ownership of the restaurant'
 );
 
 select tests.authenticate_as('owner_c');
@@ -214,25 +279,28 @@ select tests.authenticate_as('owner_c');
 -- sections_peak_reserved_capacity() is what the owner's edit form calls
 -- before the temp-rename-then-update dance for a section capacity change,
 -- to avoid attempting (and having partially committed) a doomed update -
--- see ISSUES.md's Decided note on the __tmp_<id> corruption bug this fixed.
+-- see ISSUES.md's Decided note on the __tmp_<id> corruption bug this fixed
+-- (and its residual race, narrowed but not fully closed - see that same
+-- note). 9, not 7 or 2, confirms the sweep-line actually sums the two
+-- overlapping reservations rather than only ever considering one at a time.
 select results_eq(
   $$select section_name, peak_capacity from public.sections_peak_reserved_capacity(
       array[(select id from public.sections where name = 'Basta')]
     )$$,
-  $$values ('Basta'::text, 7)$$,
-  'sections_peak_reserved_capacity reports Basta''s peak reserved capacity'
+  $$values ('Basta'::text, 9)$$,
+  'sections_peak_reserved_capacity sums the two overlapping bookings into one peak (7 + 2 = 9)'
 );
 
 select throws_ok(
-  $$update public.sections set capacity = 5 where name = 'Basta'$$,
+  $$update public.sections set capacity = 8 where name = 'Basta'$$,
   'P0001',
-  'Kapacitet sekcije ne može biti manji od 7 - toliko gostiju već ima potvrđenu rezervaciju u istom terminu.',
-  'shrinking section capacity below the peak already-booked load is rejected'
+  'Kapacitet sekcije ne može biti manji od 9 - toliko gostiju već ima potvrđenu rezervaciju u istom terminu.',
+  'shrinking section capacity below the summed peak load is rejected'
 );
 
 select lives_ok(
-  $$update public.sections set capacity = 7 where name = 'Basta'$$,
-  'shrinking section capacity down to exactly the peak booked load is allowed'
+  $$update public.sections set capacity = 9 where name = 'Basta'$$,
+  'shrinking section capacity down to exactly the summed peak load is allowed'
 );
 
 select results_eq(
@@ -240,7 +308,7 @@ select results_eq(
       array[(select id from public.sections where name = 'Basta')]
     )$$,
   $$values ('Basta'::text, 7)$$,
-  'sections_with_active_reservations reports Basta (and its party size) as blocked'
+  'sections_with_active_reservations reports Basta with its earliest booking''s party size (7, not the summed 9)'
 );
 
 select throws_ok(
@@ -252,12 +320,12 @@ select throws_ok(
 
 select tests.authenticate_as_service_role();
 update public.reservations set status = 'cancelled'
-  where restaurant_id = (select id from public.restaurants where name = 'H''s Terrace') and party_size = 7;
+  where restaurant_id = (select id from public.restaurants where name = 'H''s Terrace');
 
 select tests.authenticate_as('owner_c');
 select lives_ok(
   $$delete from public.sections where name = 'Basta'$$,
-  'deleting the section succeeds once its reservation is no longer active'
+  'deleting the section succeeds once neither reservation is active anymore'
 );
 
 select * from finish();

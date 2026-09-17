@@ -332,14 +332,10 @@ export function EditRestaurantForm({
       }
     }
 
-    // Section capacity pre-check: the actual capacity+name update further
-    // down is preceded by an unconditional rename to a temp placeholder (see
-    // the comment at that update), committed as its own statement with
-    // nothing to roll it back if the real update then fails - so a section
-    // whose capacity decrease gets rejected would otherwise be left stuck on
-    // that temp name. Checking every changing section's capacity up front,
-    // before that rename dance ever starts, avoids the doomed update
-    // entirely and reports every offending section in one message.
+    // originalSectionById/toUpdateSections are needed both by the capacity
+    // pre-check (deliberately run much later, right before the rename dance
+    // it protects - see that comment) and by the actual section mutations
+    // further down.
     const originalSectionById = new Map(sections.map((s) => [s.id, s]));
     const toUpdateSections = draftSections.filter((s): s is DraftSection & { id: string } => {
       if (s.id === null) return false;
@@ -347,36 +343,6 @@ export function EditRestaurantForm({
       if (!original) return true;
       return original.name !== s.name || (!hasActiveLayouts && original.capacity !== Number(s.capacity));
     });
-
-    if (!hasActiveLayouts) {
-      const sectionsWithCapacityChange = toUpdateSections.filter(
-        (s) => originalSectionById.get(s.id)?.capacity !== Number(s.capacity),
-      );
-      if (sectionsWithCapacityChange.length) {
-        const { data: sectionPeaks } = await supabase.rpc("sections_peak_reserved_capacity", {
-          p_section_ids: sectionsWithCapacityChange.map((s) => s.id),
-        });
-        const peakBySectionId = new Map(
-          ((sectionPeaks ?? []) as { section_id: string; section_name: string; peak_capacity: number }[]).map((row) => [
-            row.section_id,
-            row,
-          ]),
-        );
-        const belowCapacity = sectionsWithCapacityChange
-          .map((s) => peakBySectionId.get(s.id))
-          .filter((row): row is { section_id: string; section_name: string; peak_capacity: number } => !!row)
-          .filter((row) => {
-            const draft = sectionsWithCapacityChange.find((s) => s.id === row.section_id);
-            return !!draft && Number(draft.capacity) < row.peak_capacity;
-          });
-
-        if (belowCapacity.length > 0) {
-          setLoading(false);
-          setError(describeSectionsBelowCapacity(belowCapacity));
-          return;
-        }
-      }
-    }
 
     // Layouts: new ones first (real ids known before anything references
     // them, is_active included directly in the insert), then removed ones
@@ -483,16 +449,63 @@ export function EditRestaurantForm({
         capacity: hasActiveLayouts ? 0 : Number(s.capacity),
         color_index: s.colorIndex,
       }));
-    // originalSectionById/toUpdateSections were already built above, for the
-    // capacity pre-check.
+
+    // Section capacity pre-check: deliberately run here, immediately before
+    // the rename-then-update dance it protects, rather than up at the top
+    // with the other early pre-checks - the actual capacity+name update
+    // below is preceded by a rename-to-temp-placeholder step (for rows that
+    // need it) committed as its own statement with nothing to roll it back
+    // if the real update then fails, so a section whose capacity decrease
+    // gets rejected would otherwise be left stuck on that temp name. Placing
+    // this check right next to that risk, rather than several unrelated
+    // awaited calls (layouts, hours, restaurant name) earlier, minimizes -
+    // without fully eliminating - the window in which a new reservation
+    // could land between "checked safe" and "written," which would let the
+    // real update fail anyway despite passing here. Reports every offending
+    // section in one message either way.
+    if (!hasActiveLayouts) {
+      const sectionsWithCapacityChange = toUpdateSections.filter(
+        (s) => originalSectionById.get(s.id)?.capacity !== Number(s.capacity),
+      );
+      if (sectionsWithCapacityChange.length) {
+        const { data: sectionPeaks } = await supabase.rpc("sections_peak_reserved_capacity", {
+          p_section_ids: sectionsWithCapacityChange.map((s) => s.id),
+        });
+        const peakBySectionId = new Map(
+          ((sectionPeaks ?? []) as { section_id: string; section_name: string; peak_capacity: number }[]).map((row) => [
+            row.section_id,
+            row,
+          ]),
+        );
+        const belowCapacity = sectionsWithCapacityChange
+          .map((s) => peakBySectionId.get(s.id))
+          .filter((row): row is { section_id: string; section_name: string; peak_capacity: number } => !!row)
+          .filter((row) => {
+            const draft = sectionsWithCapacityChange.find((s) => s.id === row.section_id);
+            return !!draft && Number(draft.capacity) < row.peak_capacity;
+          });
+
+        if (belowCapacity.length > 0) {
+          setLoading(false);
+          setError(describeSectionsBelowCapacity(belowCapacity));
+          return;
+        }
+      }
+    }
 
     // Renaming sections can swap names between two existing rows, which the
     // unique (restaurant_id, name) constraint would reject if applied
-    // directly - stage every changed row through a guaranteed-unique temp
-    // name first so no two writes here can transiently collide.
-    const stageRenameResults = toUpdateSections.length
+    // directly - stage every row whose name is actually changing through a
+    // guaranteed-unique temp name first so no two writes here can
+    // transiently collide. Only rows with an actual name change go through
+    // this (not every row in toUpdateSections, which also includes
+    // capacity-only changes) - narrows the window between this statement and
+    // the real update below (see the capacity pre-check's own comment on the
+    // race it can't fully close) to just the cases that genuinely need it.
+    const sectionsNeedingRename = toUpdateSections.filter((s) => originalSectionById.get(s.id)?.name !== s.name);
+    const stageRenameResults = sectionsNeedingRename.length
       ? await Promise.all(
-          toUpdateSections.map((s) => supabase.from("sections").update({ name: `__tmp_${s.id}` }).eq("id", s.id)),
+          sectionsNeedingRename.map((s) => supabase.from("sections").update({ name: `__tmp_${s.id}` }).eq("id", s.id)),
         )
       : [];
     const stageRenameError = stageRenameResults.map((r) => r.error).find((e) => e !== null) ?? null;
