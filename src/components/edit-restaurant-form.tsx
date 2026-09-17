@@ -69,11 +69,27 @@ function guestCountLabel(partySize: number) {
 }
 
 type ActiveReservationBlocker = { starts_at: string; party_size: number };
+type BlockedTableRow = ActiveReservationBlocker & { table_name: string; layout_name: string };
 
-function describeBlockedTables(rows: (ActiveReservationBlocker & { table_name: string })[]) {
-  const list = rows
-    .map((r) => `"${r.table_name}" (${formatReservationDateTime(r.starts_at)}, ${guestCountLabel(r.party_size)})`)
-    .join(", ");
+function describeBlockedTable(r: BlockedTableRow) {
+  return `"${r.table_name}" (${formatReservationDateTime(r.starts_at)}, ${guestCountLabel(r.party_size)})`;
+}
+
+// Table names are only unique per layout, not per restaurant (two layouts
+// can each have their own "Sto 1") - once a save spans more than one
+// layout, a flat list would be ambiguous about which layout a given table
+// belongs to, so group by layout in that case. A single layout keeps the
+// simpler flat list, since there's nothing to disambiguate.
+function describeBlockedTables(rows: BlockedTableRow[]) {
+  const layoutNames = Array.from(new Set(rows.map((r) => r.layout_name)));
+
+  const list =
+    layoutNames.length <= 1
+      ? rows.map(describeBlockedTable).join(", ")
+      : layoutNames
+          .map((layoutName) => `${layoutName}: ${rows.filter((r) => r.layout_name === layoutName).map(describeBlockedTable).join(", ")}`)
+          .join("; ");
+
   return `Sledeći stolovi imaju aktivnu rezervaciju i ne mogu biti obrisani: ${list}.`;
 }
 
@@ -82,6 +98,11 @@ function describeBlockedSections(rows: (ActiveReservationBlocker & { section_nam
     .map((r) => `"${r.section_name}" (${formatReservationDateTime(r.starts_at)}, ${guestCountLabel(r.party_size)})`)
     .join(", ");
   return `Sledeće sekcije imaju aktivnu rezervaciju i ne mogu biti obrisane: ${list}.`;
+}
+
+function describeSectionsBelowCapacity(rows: { section_name: string; peak_capacity: number }[]) {
+  const list = rows.map((r) => `"${r.section_name}" (potrebno najmanje ${r.peak_capacity})`).join(", ");
+  return `Kapacitet sledećih sekcija ne može biti manji od broja gostiju sa već potvrđenom rezervacijom: ${list}.`;
 }
 
 function initialBlocks(hours: HoursRow[]): HourBlock[] {
@@ -311,6 +332,52 @@ export function EditRestaurantForm({
       }
     }
 
+    // Section capacity pre-check: the actual capacity+name update further
+    // down is preceded by an unconditional rename to a temp placeholder (see
+    // the comment at that update), committed as its own statement with
+    // nothing to roll it back if the real update then fails - so a section
+    // whose capacity decrease gets rejected would otherwise be left stuck on
+    // that temp name. Checking every changing section's capacity up front,
+    // before that rename dance ever starts, avoids the doomed update
+    // entirely and reports every offending section in one message.
+    const originalSectionById = new Map(sections.map((s) => [s.id, s]));
+    const toUpdateSections = draftSections.filter((s): s is DraftSection & { id: string } => {
+      if (s.id === null) return false;
+      const original = originalSectionById.get(s.id);
+      if (!original) return true;
+      return original.name !== s.name || (!hasActiveLayouts && original.capacity !== Number(s.capacity));
+    });
+
+    if (!hasActiveLayouts) {
+      const sectionsWithCapacityChange = toUpdateSections.filter(
+        (s) => originalSectionById.get(s.id)?.capacity !== Number(s.capacity),
+      );
+      if (sectionsWithCapacityChange.length) {
+        const { data: sectionPeaks } = await supabase.rpc("sections_peak_reserved_capacity", {
+          p_section_ids: sectionsWithCapacityChange.map((s) => s.id),
+        });
+        const peakBySectionId = new Map(
+          ((sectionPeaks ?? []) as { section_id: string; section_name: string; peak_capacity: number }[]).map((row) => [
+            row.section_id,
+            row,
+          ]),
+        );
+        const belowCapacity = sectionsWithCapacityChange
+          .map((s) => peakBySectionId.get(s.id))
+          .filter((row): row is { section_id: string; section_name: string; peak_capacity: number } => !!row)
+          .filter((row) => {
+            const draft = sectionsWithCapacityChange.find((s) => s.id === row.section_id);
+            return !!draft && Number(draft.capacity) < row.peak_capacity;
+          });
+
+        if (belowCapacity.length > 0) {
+          setLoading(false);
+          setError(describeSectionsBelowCapacity(belowCapacity));
+          return;
+        }
+      }
+    }
+
     // Layouts: new ones first (real ids known before anything references
     // them, is_active included directly in the insert), then removed ones
     // (cascades their tables at the DB level).
@@ -408,7 +475,6 @@ export function EditRestaurantForm({
       return;
     }
 
-    const originalSectionById = new Map(sections.map((s) => [s.id, s]));
     const toInsertSections = draftSections
       .filter((s) => s.id === null)
       .map((s) => ({
@@ -417,14 +483,8 @@ export function EditRestaurantForm({
         capacity: hasActiveLayouts ? 0 : Number(s.capacity),
         color_index: s.colorIndex,
       }));
-    // Only rows that actually changed - skips unnecessary writes, and keeps
-    // the temp-rename dance below limited to rows that need it.
-    const toUpdateSections = draftSections.filter((s): s is DraftSection & { id: string } => {
-      if (s.id === null) return false;
-      const original = originalSectionById.get(s.id);
-      if (!original) return true;
-      return original.name !== s.name || (!hasActiveLayouts && original.capacity !== Number(s.capacity));
-    });
+    // originalSectionById/toUpdateSections were already built above, for the
+    // capacity pre-check.
 
     // Renaming sections can swap names between two existing rows, which the
     // unique (restaurant_id, name) constraint would reject if applied

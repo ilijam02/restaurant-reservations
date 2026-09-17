@@ -1,16 +1,18 @@
--- Coverage for
--- supabase/migrations/20260913140000_protect_capacity_from_active_reservations.sql
--- and 20260917100000_detailed_active_reservation_errors.sql: deleting a
+-- Coverage for supabase/migrations/20260913140000_protect_capacity_from_active_reservations.sql
+-- and its three follow-ups (20260917100000_detailed_active_reservation_errors.sql,
+-- 20260917110000_tables_with_active_reservations_layout_name.sql,
+-- 20260917120000_sections_peak_reserved_capacity_batch.sql): deleting a
 -- table/section, or shrinking restaurants.capacity/sections.capacity, must
 -- be rejected while a confirmed, not-yet-ended reservation depends on it,
 -- and allowed again once that reservation is cancelled (or, for the
 -- capacity checks, once the new number is still large enough). The
--- tables_with_active_reservations()/sections_with_active_reservations()
--- pre-check functions the owner's edit form calls before attempting any
--- delete are covered directly, rather than by asserting the trigger's
--- raised message text - that text now embeds a formatted reservation
--- date/time, which would make an exact-string assertion here depend on
--- exactly when the suite happens to run.
+-- tables_with_active_reservations()/sections_with_active_reservations()/
+-- sections_peak_reserved_capacity() pre-check functions the owner's edit
+-- form calls before attempting any delete or section capacity decrease are
+-- covered directly, rather than by asserting the trigger's raised message
+-- text - that text now embeds a formatted reservation date/time, which
+-- would make an exact-string assertion here depend on exactly when the
+-- suite happens to run.
 --
 -- "Active" reservations here are created via create_reservation() as usual
 -- (starting in the future, same as every other test file); "no longer
@@ -19,7 +21,7 @@
 -- exercise through the app's own RPC surface (see ISSUES.md's Customer
 -- backlog).
 begin;
-select plan(20);
+select plan(21);
 
 select tests.create_supabase_user('owner_c', 'ownerc@test.com', null,
   '{"first_name":"Owner","last_name":"C","phone":"555-0007","role":"owner"}'::jsonb);
@@ -65,13 +67,16 @@ select tests.authenticate_as('owner_c');
 
 -- tables_with_active_reservations() is what the owner's edit form calls
 -- before attempting any delete, so it can report every blocker in one save
--- instead of discovering them one .delete() at a time.
+-- instead of discovering them one .delete() at a time. layout_name is
+-- reported too, since table names are only unique per layout (not per
+-- restaurant) - the form uses it to group its message once a save spans
+-- more than one layout.
 select results_eq(
-  $$select table_name, party_size from public.tables_with_active_reservations(
+  $$select table_name, layout_name, party_size from public.tables_with_active_reservations(
       array[(select id from public.tables where name = 'Sto A')]
     )$$,
-  $$values ('Sto A'::text, 4)$$,
-  'tables_with_active_reservations reports Sto A (and its party size) as blocked'
+  $$values ('Sto A'::text, 'Raspored 1'::text, 4)$$,
+  'tables_with_active_reservations reports Sto A (its layout, and party size) as blocked'
 );
 
 select is_empty(
@@ -205,6 +210,19 @@ select lives_ok(
 );
 
 select tests.authenticate_as('owner_c');
+
+-- sections_peak_reserved_capacity() is what the owner's edit form calls
+-- before the temp-rename-then-update dance for a section capacity change,
+-- to avoid attempting (and having partially committed) a doomed update -
+-- see ISSUES.md's Decided note on the __tmp_<id> corruption bug this fixed.
+select results_eq(
+  $$select section_name, peak_capacity from public.sections_peak_reserved_capacity(
+      array[(select id from public.sections where name = 'Basta')]
+    )$$,
+  $$values ('Basta'::text, 7)$$,
+  'sections_peak_reserved_capacity reports Basta''s peak reserved capacity'
+);
+
 select throws_ok(
   $$update public.sections set capacity = 5 where name = 'Basta'$$,
   'P0001',
