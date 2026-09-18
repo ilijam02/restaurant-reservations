@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { CreateRestaurantForm } from "@/components/create-restaurant-form";
+import { OWNER_MENU_ITEMS } from "@/lib/owner-nav";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function OwnerHomePage() {
@@ -16,7 +17,7 @@ export default async function OwnerHomePage() {
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
-      <AppHeader />
+      <AppHeader menuItems={OWNER_MENU_ITEMS} />
       <h1 className="text-3xl font-bold">VLASNIK</h1>
 
       <CreateRestaurantForm />
@@ -33,7 +34,7 @@ export default async function OwnerHomePage() {
                 className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3 dark:border-stone-700 dark:bg-stone-800"
               >
                 <span>{restaurant.name}</span>
-                <div className="flex shrink-0 items-center gap-3">
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
                   <Link
                     href={`/owner/restaurants/${restaurant.id}/edit`}
                     className="text-sm font-medium text-orange-700 hover:underline dark:text-accent"
@@ -45,6 +46,12 @@ export default async function OwnerHomePage() {
                     className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
                   >
                     Osoblje
+                  </Link>
+                  <Link
+                    href={`/owner/restaurants/${restaurant.id}/reservations`}
+                    className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
+                  >
+                    Rezervacije
                   </Link>
                   <Link
                     href={`/owner/restaurants/${restaurant.id}/menu`}

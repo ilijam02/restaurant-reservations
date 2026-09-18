@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { MenuCategoriesManager } from "@/components/menu-categories-manager";
 import { MenuItemsManager } from "@/components/menu-items-manager";
+import { OWNER_MENU_ITEMS } from "@/lib/owner-nav";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function OwnerRestaurantMenuPage({ params }: { params: Promise<{ id: string }> }) {
@@ -40,7 +41,7 @@ export default async function OwnerRestaurantMenuPage({ params }: { params: Prom
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
-      <AppHeader backHref="/owner" />
+      <AppHeader backHref="/owner" menuItems={OWNER_MENU_ITEMS} />
       <h1 className="text-3xl font-bold">Meni - {restaurant.name}</h1>
 
       <div className="w-full max-w-2xl space-y-3 rounded-lg border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-700 dark:bg-stone-800">

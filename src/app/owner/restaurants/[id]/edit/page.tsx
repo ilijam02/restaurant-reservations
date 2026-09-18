@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { EditRestaurantForm } from "@/components/edit-restaurant-form";
+import { OWNER_MENU_ITEMS } from "@/lib/owner-nav";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function EditRestaurantPage({
@@ -56,7 +57,7 @@ export default async function EditRestaurantPage({
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
-      <AppHeader backHref="/owner" />
+      <AppHeader backHref="/owner" menuItems={OWNER_MENU_ITEMS} />
       <h1 className="text-3xl font-bold">Uredi restoran</h1>
       <EditRestaurantForm
         restaurant={restaurant}

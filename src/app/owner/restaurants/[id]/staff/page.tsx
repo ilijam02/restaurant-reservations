@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { OWNER_MENU_ITEMS } from "@/lib/owner-nav";
 import { createClient } from "@/lib/supabase/server";
 import { AppHeader } from "@/components/app-header";
 import { OwnerStaffManager } from "@/components/owner-staff-manager";
@@ -44,7 +45,7 @@ export default async function OwnerRestaurantStaffPage({ params }: { params: Pro
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
-      <AppHeader backHref="/owner" />
+      <AppHeader backHref="/owner" menuItems={OWNER_MENU_ITEMS} />
       <h1 className="text-3xl font-bold">{restaurant.name}</h1>
       <OwnerStaffManager applications={applications} staff={staff} />
     </main>
