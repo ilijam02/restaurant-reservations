@@ -393,12 +393,20 @@ select ok(
   'after the no_show, R4''s reservation_tables range was brought in line with the reservation''s own (backdated) starts_at and shrunk ends_at'
 );
 
+-- The id is resolved as service_role and stashed in a transaction-local
+-- setting: employee_3 can't see this restaurant's reservations at all
+-- (staff-only RLS), so a subselect run as them would come back null and
+-- the call would fail with "doesn't exist" instead of reaching the
+-- permission check this test is about.
+select tests.authenticate_as_service_role();
+select set_config('tests.r4_id',
+  (select id::text from public.reservations
+   where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 4),
+  true);
+
 select tests.authenticate_as('employee_3');
 select throws_ok(
-  $$select public.update_reservation_status(
-      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 4 and status = 'no_show'),
-      'ongoing'
-    )$$,
+  $$select public.update_reservation_status(current_setting('tests.r4_id')::uuid, 'ongoing')$$,
   'P0001',
   'Nemate dozvolu da menjate status ove rezervacije.',
   'employee_3, staff nowhere, has no permission over I''s Café''s reservations'
