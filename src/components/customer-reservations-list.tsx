@@ -34,8 +34,8 @@ const STATUS_LABELS: Record<ReservationStatus, string> = {
 
 const STATUS_CLASSES: Record<ReservationStatus, string> = {
   confirmed: "bg-success/10 text-success",
-  preparing_order: "bg-warning/10 text-warning",
-  order_prepared: "bg-warning/10 text-warning",
+  preparing_order: "bg-warning/10 text-amber-700 dark:text-warning",
+  order_prepared: "bg-warning/10 text-amber-700 dark:text-warning",
   ongoing: "bg-success/10 text-success",
   completed: "bg-success/10 text-success",
   cancelled: "bg-danger/10 text-danger",

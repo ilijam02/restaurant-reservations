@@ -1,34 +1,39 @@
--- Coverage for supabase/migrations/20260917140000_reservation_status_lifecycle.sql
--- and 20260918100000_ongoing_moves_start_to_now.sql:
+-- Coverage for supabase/migrations/20260917140000_reservation_status_lifecycle.sql,
+-- 20260918100000_ongoing_moves_start_to_now.sql and
+-- 20260918130000_reservation_lifecycle_review_fixes.sql:
 -- update_reservation_status()'s transition graph (confirmed ->
 -- [preparing_order -> order_prepared ->] ongoing -> completed, plus
 -- confirmed/order_prepared -> no_show only once starts_at has passed),
--- staff-only permission, an early "ongoing" moving starts_at up to now(),
--- and early completion shrinking ends_at so the freed table slot is
--- actually bookable again through the exclusion constraint (not just a
--- status relabel - see the migrations' own comments on why both matter).
+-- staff-only permission (and no anon access), an early "ongoing" moving
+-- starts_at up to now() - only within 60 minutes of the booked start -,
+-- early completion shrinking ends_at so the freed table slot is actually
+-- bookable again through the exclusion constraint (not just a status
+-- relabel), no transitions on an already-ended reservation, and the
+-- reservation_tables time range staying in lockstep with the reservation's
+-- own after every one of those rewrites.
 --
--- I's Café (owner_e) has two tables ("Sto Z", "Sto Y") on an active layout,
--- 24/7 hours, and a single no-options menu item "Pica" - just enough to
--- book both a plain reservation and an order-linked one. employee_2 is
--- inserted straight into restaurant_staff as 'accepted' (service_role),
--- skipping the apply/accept dance that's already covered by
+-- I's Café (owner_e) has three tables ("Sto Z", "Sto Y", "Sto X") on an
+-- active layout, 24/7 hours, and a single no-options menu item "Pica" -
+-- just enough to book both a plain reservation and an order-linked one.
+-- employee_2 is inserted straight into restaurant_staff as 'accepted'
+-- (service_role), skipping the apply/accept dance that's already covered by
 -- 20-restaurant-staff-rls.sql. employee_3 is deliberately staff nowhere, to
 -- exercise the permission check.
 --
--- Times are relative to now() (a few hours out) rather than "tomorrow at
--- 12:00": moving starts_at up to now() is only allowed while the
--- reservation ends within 24 hours, so a fixed clock time would pass or
--- fail depending on what time of day the suite happens to run. Inside one
+-- Times are relative to now() (20-55 minutes out) rather than "tomorrow at
+-- 12:00": marking a reservation ongoing early is only allowed within 60
+-- minutes of its starts_at, so a fixed clock time would pass or fail
+-- depending on what time of day the suite happens to run. Inside one
 -- pgTAP transaction now() is constant, which is also why completing right
 -- after starting relies on the function's "ends_at is at least starts_at +
--- 1 second" clamp. "Already started" reservations are simulated with a
--- direct service_role backdate, same as 70-capacity-guards.sql simulates
--- "no longer active" - create_reservation() itself refuses a past
--- starts_at, and there is no time-travel helper wired into these security
--- definer functions (search_path = '' bypasses tests.freeze_time()).
+-- 1 second" clamp. "Already started"/"already ended" reservations are
+-- simulated with a direct service_role backdate, same as
+-- 70-capacity-guards.sql simulates "no longer active" - create_reservation()
+-- itself refuses a past starts_at, and there is no time-travel helper wired
+-- into these security definer functions (search_path = '' bypasses
+-- tests.freeze_time()).
 begin;
-select plan(28);
+select plan(34);
 
 select tests.create_supabase_user('owner_e', 'ownere@test.com', null,
   '{"first_name":"Owner","last_name":"E","phone":"555-0009","role":"owner"}'::jsonb);
@@ -58,6 +63,12 @@ insert into public.tables (restaurant_id, layout_id, name, seats, x, y, width, h
     (select id from public.layouts where name = 'Raspored'),
     'Sto Y', 4, 4, 0, 2, 2
   );
+insert into public.tables (restaurant_id, layout_id, name, seats, x, y, width, height)
+  values (
+    (select id from public.restaurants where name = 'I''s Café'),
+    (select id from public.layouts where name = 'Raspored'),
+    'Sto X', 6, 8, 0, 2, 2
+  );
 insert into public.menu_items (restaurant_id, name, price, is_available)
   values ((select id from public.restaurants where name = 'I''s Café'), 'Pica', 500, true);
 
@@ -76,12 +87,12 @@ select lives_ok(
   $$select public.create_reservation(
       (select id from public.restaurants where name = 'I''s Café'),
       2,
-      (now() + interval '2 hours'),
-      60,
+      (now() + interval '20 minutes'),
+      30,
       null,
       array[(select id from public.tables where name = 'Sto Z')]
     )$$,
-  'customer_4 books Sto Z for R1, 2 hours from now, no order'
+  'customer_4 books Sto Z for R1, 20 minutes from now, no order'
 );
 
 select tests.authenticate_as('employee_2');
@@ -102,7 +113,14 @@ select results_eq(
 select ok(
   (select starts_at <= now() and starts_at > now() - interval '1 minute'
    from public.reservations where customer_id = tests.get_supabase_uid('customer_4') and party_size = 2),
-  'starting R1 early moved its starts_at up from 2 hours out to now()'
+  'starting R1 early moved its starts_at up from 20 minutes out to now()'
+);
+
+select ok(
+  (select bool_and(rt.starts_at = r.starts_at and rt.ends_at = r.ends_at)
+   from public.reservation_tables rt join public.reservations r on r.id = rt.reservation_id
+   where r.customer_id = tests.get_supabase_uid('customer_4') and r.party_size = 2),
+  'after the early start, R1''s reservation_tables range matches the reservation''s own starts_at/ends_at'
 );
 
 select tests.authenticate_as('customer_4');
@@ -134,7 +152,14 @@ select results_eq(
 select ok(
   (select ends_at < now() + interval '1 minute'
    from public.reservations where customer_id = tests.get_supabase_uid('customer_4') and party_size = 2),
-  'completing R1 early shrank its ends_at from the original 3-hours-out booked end to right around now()'
+  'completing R1 early shrank its ends_at from the original 50-minutes-out booked end to right around now()'
+);
+
+select ok(
+  (select bool_and(rt.starts_at = r.starts_at and rt.ends_at = r.ends_at)
+   from public.reservation_tables rt join public.reservations r on r.id = rt.reservation_id
+   where r.customer_id = tests.get_supabase_uid('customer_4') and r.party_size = 2),
+  'after the early completion, R1''s reservation_tables range still matches the reservation''s own starts_at/ends_at'
 );
 
 select tests.authenticate_as('customer_4');
@@ -142,8 +167,8 @@ select lives_ok(
   $$select public.create_reservation(
       (select id from public.restaurants where name = 'I''s Café'),
       2,
-      (now() + interval '2 hours'),
-      60,
+      (now() + interval '20 minutes'),
+      30,
       null,
       array[(select id from public.tables where name = 'Sto Z')]
     )$$,
@@ -170,13 +195,13 @@ select lives_ok(
   $$select public.create_reservation(
       (select id from public.restaurants where name = 'I''s Café'),
       3,
-      (now() + interval '2 hours'),
-      60,
+      (now() + interval '20 minutes'),
+      30,
       null,
       array[(select id from public.tables where name = 'Sto Y')],
       (select id from public.orders where customer_id = tests.get_supabase_uid('customer_4') and status = 'draft')
     )$$,
-  'customer_4 books R3 (party of 3, distinct from R1/R2''s party of 2) on Sto Y, 2 hours from now, with the cart attached'
+  'customer_4 books R3 (party of 3, distinct from R1/R2''s party of 2) on Sto Y, 20 minutes from now, with the cart attached'
 );
 
 select tests.authenticate_as('employee_2');
@@ -197,7 +222,7 @@ select throws_ok(
     )$$,
   'P0001',
   'Gost može biti označen kao odsutan tek nakon početka rezervacije.',
-  'R3 cannot be marked no_show before its starts_at (2 hours out) has arrived'
+  'R3 cannot be marked no_show before its starts_at (20 minutes out) has arrived'
 );
 
 select lives_ok(
@@ -270,22 +295,35 @@ select throws_ok(
       'ongoing'
     )$$,
   'P0001',
-  'Rezervacija počinje za više od 24 sata i ne može biti označena kao u toku.',
-  'R4 cannot be started early: pulling its starts_at up to now() would stretch it past the 24-hour cap on a reservation''s length'
+  'Rezervacija može biti označena kao u toku najviše 60 minuta pre zakazanog početka.',
+  'R4 cannot be started early: it is booked days out, far beyond the 60-minute early-start window'
 );
 
--- === R6: starting early would collide with R2 on the same table ===
+-- === R5/R6 on Sto X: starting R6 early would collide with R5 on the same
+-- === table (nothing else is on Sto X, so R5 is the only possible cause) ===
 select tests.authenticate_as('customer_4');
 select lives_ok(
   $$select public.create_reservation(
       (select id from public.restaurants where name = 'I''s Café'),
-      1,
-      (now() + interval '5 hours'),
-      60,
+      5,
+      (now() + interval '20 minutes'),
+      30,
       null,
-      array[(select id from public.tables where name = 'Sto Z')]
+      array[(select id from public.tables where name = 'Sto X')]
     )$$,
-  'customer_4 books R6 (party of 1) on Sto Z, 5 hours out - after R2''s slot, so no conflict yet'
+  'customer_4 books R5 (party of 5, Sto X has 6 seats) on Sto X, 20 minutes from now'
+);
+
+select lives_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'I''s Café'),
+      1,
+      (now() + interval '55 minutes'),
+      30,
+      null,
+      array[(select id from public.tables where name = 'Sto X')]
+    )$$,
+  'customer_4 books R6 (party of 1) on Sto X, 55 minutes out - after R5''s slot, so no conflict yet, and inside the 60-minute early-start window'
 );
 
 select tests.authenticate_as('employee_2');
@@ -296,7 +334,24 @@ select throws_ok(
     )$$,
   'P0001',
   'Sto je zauzet pre početka ove rezervacije - ne može biti označena kao u toku.',
-  'R6 cannot be started early: pulling its starts_at up to now() would overlap R2 on the same table'
+  'R6 cannot be started early: pulling its starts_at up to now() would overlap R5 on Sto X'
+);
+
+select tests.authenticate_as_service_role();
+update public.reservations
+  set starts_at = now() - interval '2 hours', ends_at = now() - interval '1 hour'
+  where restaurant_id = (select id from public.restaurants where name = 'I''s Café')
+    and party_size = 1;
+
+select tests.authenticate_as('employee_2');
+select throws_ok(
+  $$select public.update_reservation_status(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 1),
+      'ongoing'
+    )$$,
+  'P0001',
+  'Rezervacija je već istekla.',
+  'a reservation whose ends_at has already passed accepts no transitions, even before the cron sweep has caught up with it'
 );
 
 select throws_ok(
@@ -331,6 +386,13 @@ select results_eq(
   'R4 is now no_show'
 );
 
+select ok(
+  (select bool_and(rt.starts_at = r.starts_at and rt.ends_at = r.ends_at)
+   from public.reservation_tables rt join public.reservations r on r.id = rt.reservation_id
+   where r.restaurant_id = (select id from public.restaurants where name = 'I''s Café') and r.party_size = 4),
+  'after the no_show, R4''s reservation_tables range was brought in line with the reservation''s own (backdated) starts_at and shrunk ends_at'
+);
+
 select tests.authenticate_as('employee_3');
 select throws_ok(
   $$select public.update_reservation_status(
@@ -340,6 +402,14 @@ select throws_ok(
   'P0001',
   'Nemate dozvolu da menjate status ove rezervacije.',
   'employee_3, staff nowhere, has no permission over I''s Café''s reservations'
+);
+
+select tests.clear_authentication();
+select throws_ok(
+  $$select public.update_reservation_status(gen_random_uuid(), 'ongoing')$$,
+  '42501',
+  null,
+  'an unauthenticated (anon) caller cannot execute update_reservation_status at all'
 );
 
 select * from finish();
