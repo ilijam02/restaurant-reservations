@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { CartSummary, type CartItem } from "@/components/cart-summary";
 
-type ReservationStatus = "confirmed" | "cancelled" | "completed" | "no_show";
+type ReservationStatus = "confirmed" | "preparing_order" | "order_prepared" | "ongoing" | "cancelled" | "completed" | "no_show";
+
+// Mirrors is_active_reservation_status() in the DB (see
+// 20260917140000_reservation_status_lifecycle.sql) - a reservation
+// mid-service is still "current" from the customer's point of view too.
+const ACTIVE_STATUSES: ReservationStatus[] = ["confirmed", "preparing_order", "order_prepared", "ongoing"];
 
 export type ReservationRow = {
   id: string;
@@ -19,6 +24,9 @@ export type ReservationRow = {
 
 const STATUS_LABELS: Record<ReservationStatus, string> = {
   confirmed: "Potvrđena",
+  preparing_order: "Priprema porudžbine",
+  order_prepared: "Porudžbina spremna",
+  ongoing: "U toku",
   completed: "Završena",
   cancelled: "Otkazana",
   no_show: "Nije se pojavio/la",
@@ -26,17 +34,22 @@ const STATUS_LABELS: Record<ReservationStatus, string> = {
 
 const STATUS_CLASSES: Record<ReservationStatus, string> = {
   confirmed: "bg-success/10 text-success",
+  preparing_order: "bg-warning/10 text-amber-700 dark:text-warning",
+  order_prepared: "bg-warning/10 text-amber-700 dark:text-warning",
+  ongoing: "bg-success/10 text-success",
   completed: "bg-success/10 text-success",
   cancelled: "bg-danger/10 text-danger",
   no_show: "bg-danger/10 text-danger",
 };
 
-// Current vs past is purely time-based (ends_at against now), not status-driven
-// - a cancelled-but-still-upcoming reservation is "past" even though its time
-// hasn't arrived yet, since it's no longer something the customer is waiting
-// on. See ISSUES.md's Decided note for the full reasoning.
+// Current vs past is purely time-based (ends_at against now), not otherwise
+// status-driven - a cancelled-but-still-upcoming reservation is "past" even
+// though its time hasn't arrived yet, since it's no longer something the
+// customer is waiting on. See ISSUES.md's Decided note for the full
+// reasoning. ACTIVE_STATUSES only narrows which statuses even count as
+// "waiting on" in the first place (mid-service counts, terminal ones don't).
 function isCurrent(reservation: ReservationRow, now: Date) {
-  return reservation.status === "confirmed" && new Date(reservation.ends_at).getTime() >= now.getTime();
+  return ACTIVE_STATUSES.includes(reservation.status) && new Date(reservation.ends_at).getTime() >= now.getTime();
 }
 
 // Explicit timeZone, matching create_reservation()'s own hardcoded
