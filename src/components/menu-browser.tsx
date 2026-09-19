@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { MenuItemImage } from "@/components/menu-item-image";
 import { CartSummary, cartTotal, formatPrice, type CartItem } from "@/components/cart-summary";
@@ -60,6 +60,20 @@ export function MenuBrowser({
   const [cartOpen, setCartOpen] = useState(initialCartItems.length > 0);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // The cart bar is fixed to the bottom of the viewport and changes height
+  // when the cart is expanded, so the space reserved under the last menu row
+  // is measured from the bar itself instead of a fixed guess - otherwise an
+  // expanded cart covers the last row even when scrolled all the way down.
+  const cartBarRef = useRef<HTMLDivElement>(null);
+  const [cartBarHeight, setCartBarHeight] = useState(0);
+  useEffect(() => {
+    const bar = cartBarRef.current;
+    if (!bar) return;
+    const observer = new ResizeObserver(() => setCartBarHeight(bar.offsetHeight));
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
 
   const [expanded, setExpanded] = useState<{ itemId: string; selections: Record<string, string[]>; quantity: number } | null>(
     null,
@@ -222,7 +236,11 @@ export function MenuBrowser({
   const total = cartTotal(cartItems);
 
   return (
-    <div className="w-full max-w-5xl space-y-6 pb-28">
+    // pb-28 is only the first-paint fallback before the bar is measured.
+    <div
+      className="w-full max-w-5xl space-y-6 pb-28"
+      style={cartBarHeight ? { paddingBottom: cartBarHeight + 48 } : undefined}
+    >
       {groups.length === 0 ? (
         <p className="text-stone-600 dark:text-stone-400">Meni trenutno nema stavki.</p>
       ) : (
@@ -235,16 +253,16 @@ export function MenuBrowser({
               {group.items.map((item) => (
                 <li key={item.id}>
                   <div
-                    className={`space-y-3 rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800 ${
+                    className={`overflow-hidden rounded-lg border border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-800 ${
                       item.is_available ? "" : "opacity-60"
                     }`}
                   >
                     <MenuItemImage
                       imageUrl={item.image_url}
                       alt={item.name}
-                      className="aspect-square w-full rounded-md object-cover"
+                      className="aspect-video w-full object-cover"
                     />
-                    <div className="space-y-3">
+                    <div className="space-y-2 px-4 py-3">
                       <div className="min-w-0">
                         <p className="font-medium">{item.name}</p>
                         {item.description && (
@@ -378,7 +396,10 @@ export function MenuBrowser({
         </div>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800">
+      <div
+        ref={cartBarRef}
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800"
+      >
         <div className="mx-auto flex max-w-5xl flex-col gap-3">
           {cartOpen && (
             // 20% shorter than the default max-h-64 (16rem) - 12.8rem.
