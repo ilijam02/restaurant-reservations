@@ -22,7 +22,7 @@ function createPopupContent(restaurant: MapRestaurant, onOpen: (href: string) =>
   const href = `/customer/restaurants/${restaurant.id}`;
 
   const root = document.createElement("div");
-  root.className = "space-y-1 pr-4";
+  root.className = "space-y-1";
 
   const name = document.createElement("p");
   name.className = "text-base font-semibold";
@@ -81,7 +81,7 @@ export function RestaurantMap({ restaurants, focusId }: { restaurants: MapRestau
     const markers = markersRef.current;
 
     for (const restaurant of restaurants) {
-      const popup = new lib.Popup({ offset: [0, -42], maxWidth: "260px" }).setDOMContent(
+      const popup = new lib.Popup({ offset: [0, -42], maxWidth: "260px", closeButton: false }).setDOMContent(
         createPopupContent(restaurant, (href) => navigate.current(href)),
       );
       const marker = new lib.Marker({ element: createPinElement(restaurant.name), anchor: "bottom" })

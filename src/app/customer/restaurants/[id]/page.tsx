@@ -52,15 +52,23 @@ export default async function CustomerRestaurantPage({
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref="/customer" />
-      {/* Top-left corner of the content, lined up with the menu's left edge. */}
+      {/* Pinned to the top-right corner on the same line as AppHeader's back
+          button (fixed top-4, h-10) and styled like it, so it stays put and
+          readable when the menu scrolls underneath. left-32 keeps it clear of
+          the header's own buttons; the wrapper ignores clicks so it never
+          blocks anything in the gap between the two. */}
       {(restaurant.address || restaurant.latitude !== null) && (
-        <div className="flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-2 self-center">
-          {restaurant.address && <p className="text-stone-600 dark:text-stone-400">{restaurant.address}</p>}
+        <div className="pointer-events-none fixed top-4 right-4 left-32 z-40 flex h-10 items-center justify-end gap-2">
+          {restaurant.address && (
+            <p className="pointer-events-auto flex h-10 min-w-0 items-center rounded-md border border-stone-300 bg-white px-3 text-sm text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300">
+              <span className="truncate">{restaurant.address}</span>
+            </p>
+          )}
           {/* Longitude is always set together with latitude (DB constraint). */}
           {restaurant.latitude !== null && (
             <Link
               href={mapHrefForRestaurant(restaurant.id)}
-              className="rounded-md border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:border-stone-600 dark:hover:bg-stone-700"
+              className="pointer-events-auto flex h-10 shrink-0 items-center rounded-md border border-stone-300 bg-white px-3 text-sm text-stone-900 hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:hover:bg-stone-700 dark:focus-visible:ring-offset-stone-900"
             >
               Otvori na mapi
             </Link>

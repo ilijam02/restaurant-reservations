@@ -71,9 +71,6 @@ body {
     background: #292524; /* stone-800 */
     color: #f5f5f4; /* stone-100 */
   }
-  .maplibregl-popup .maplibregl-popup-close-button {
-    color: #f5f5f4;
-  }
   .maplibregl-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
   .maplibregl-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
   .maplibregl-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
