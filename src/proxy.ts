@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { decideRedirect, type Role } from "@/lib/auth/redirect";
+import { decideRedirect } from "@/lib/auth/redirect";
+import { getProfileRole } from "@/lib/auth/role";
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -27,7 +28,7 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const role = (user?.user_metadata?.role as Role | undefined) ?? null;
+  const role = user ? await getProfileRole(supabase, user.id) : null;
 
   const redirectTo = decideRedirect(request.nextUrl.pathname, role);
   if (redirectTo) {
