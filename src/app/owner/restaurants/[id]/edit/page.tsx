@@ -16,7 +16,7 @@ export default async function EditRestaurantPage({
 
   const { data: restaurant } = await supabase
     .from("restaurants")
-    .select("id, name, capacity, default_stay_minutes, image_url, owner_id")
+    .select("id, name, capacity, default_stay_minutes, image_url, address, latitude, longitude, owner_id")
     .eq("id", id)
     .single();
 

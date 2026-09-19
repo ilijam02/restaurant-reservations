@@ -46,6 +46,8 @@ One row per `auth.users` row — the signup fields Supabase Auth doesn't store i
 | `capacity` | integer, nullable | plain manual cap; `null` = unlimited. **Only meaningful/written when the restaurant has no sections and no active layout** — once either exists, effective capacity is computed live from them instead (app logic, see `src/lib/capacity-cascade.ts`) and this column is left stale on purpose. |
 | `default_stay_minutes` | integer, not null, default 90 | constrained to 30–180, matching `create_reservation()`'s own duration cap |
 | `image_url` | text, nullable | full public URL of the restaurant's cover image in the `restaurant-images` bucket (see Storage below); when null, `RestaurantImage` renders an inline SVG placeholder client-side |
+| `address` | text, nullable | owner's free-text address; never blank (check constraint) — independent of the pin, editing one doesn't rewrite the other |
+| `latitude`, `longitude` | double precision, nullable | the map pin, set/cleared together (check constraint) and range-checked (±90 / ±180); `null` = not shown on the map. Plain numbers, no PostGIS — see [restaurant_location.sql](supabase/migrations/20260919150000_restaurant_location.sql) |
 | `created_at` | timestamptz | |
 
 **RLS:** select is open to any authenticated user (any role — needed so customers/employees can browse). Insert is restricted to accounts with `profiles.role = 'owner'`. Update/delete restricted to the owning `owner_id`.
