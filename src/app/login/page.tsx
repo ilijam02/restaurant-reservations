@@ -1,9 +1,22 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+// Where the account deletion flow lands (see DeleteAccountSection). Its own
+// component so useSearchParams sits inside a Suspense boundary and the rest of
+// the page can still be prerendered.
+function DeletedNotice() {
+  const deleted = useSearchParams().get("deleted") === "1";
+  if (!deleted) return null;
+  return (
+    <p role="status" className="text-sm text-stone-700 dark:text-stone-300">
+      Vaš nalog je obrisan.
+    </p>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,6 +50,10 @@ export default function LoginPage() {
         className="w-full max-w-sm space-y-4 rounded-lg border border-stone-200 bg-white p-8 shadow-sm dark:border-stone-700 dark:bg-stone-800"
       >
         <h1 className="text-2xl font-semibold">Prijava</h1>
+
+        <Suspense fallback={null}>
+          <DeletedNotice />
+        </Suspense>
 
         <div className="space-y-1">
           <label htmlFor="email" className="block text-sm font-medium">

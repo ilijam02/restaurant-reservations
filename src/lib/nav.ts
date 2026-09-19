@@ -12,9 +12,16 @@ const ROLE_MENU_ITEMS: Record<Role, MenuItem[]> = {
   customer: [
     { label: "Mapa", href: "/customer/map" },
     { label: "Moje rezervacije", href: "/customer/reservations" },
+    { label: "Moj nalog", href: "/customer/account" },
   ],
-  employee: [{ label: "Prijavi se za posao", href: "/employee/apply" }],
-  owner: [{ label: "Sve rezervacije", href: "/owner/reservations" }],
+  employee: [
+    { label: "Prijavi se za posao", href: "/employee/apply" },
+    { label: "Moj nalog", href: "/employee/account" },
+  ],
+  owner: [
+    { label: "Sve rezervacije", href: "/owner/reservations" },
+    { label: "Moj nalog", href: "/owner/account" },
+  ],
 };
 
 function roleFromPathname(pathname: string): Role | null {
