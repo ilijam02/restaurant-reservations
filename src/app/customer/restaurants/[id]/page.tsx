@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { MenuBrowser } from "@/components/menu-browser";
 import type { CartItem } from "@/components/cart-summary";
+import { mapHrefForRestaurant } from "@/lib/map";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function CustomerRestaurantPage({
@@ -12,7 +14,7 @@ export default async function CustomerRestaurantPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: restaurant } = await supabase.from("restaurants").select("id, name").eq("id", id).single();
+  const { data: restaurant } = await supabase.from("restaurants").select("id, name, address, latitude").eq("id", id).single();
 
   if (!restaurant) {
     notFound();
@@ -51,6 +53,20 @@ export default async function CustomerRestaurantPage({
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref="/customer" />
       <h1 className="text-3xl font-bold">{restaurant.name}</h1>
+      {(restaurant.address || restaurant.latitude !== null) && (
+        <div className="flex flex-col items-center gap-2">
+          {restaurant.address && <p className="text-stone-600 dark:text-stone-400">{restaurant.address}</p>}
+          {/* Longitude is always set together with latitude (DB constraint). */}
+          {restaurant.latitude !== null && (
+            <Link
+              href={mapHrefForRestaurant(restaurant.id)}
+              className="rounded-md border border-stone-300 px-3 py-1.5 text-sm hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:border-stone-600 dark:hover:bg-stone-700"
+            >
+              Otvori na mapi
+            </Link>
+          )}
+        </div>
+      )}
       <MenuBrowser
         restaurantId={id}
         categories={categories ?? []}

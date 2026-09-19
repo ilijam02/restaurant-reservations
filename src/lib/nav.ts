@@ -9,7 +9,10 @@ export type MenuItem = { label: string; href: string };
 // that role's top-level destinations. The current page's own link stays in
 // the list (AppHeader refreshes instead of navigating when it's clicked).
 const ROLE_MENU_ITEMS: Record<Role, MenuItem[]> = {
-  customer: [{ label: "Moje rezervacije", href: "/customer/reservations" }],
+  customer: [
+    { label: "Mapa", href: "/customer/map" },
+    { label: "Moje rezervacije", href: "/customer/reservations" },
+  ],
   employee: [{ label: "Prijavi se za posao", href: "/employee/apply" }],
   owner: [{ label: "Sve rezervacije", href: "/owner/reservations" }],
 };

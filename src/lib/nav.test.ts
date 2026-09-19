@@ -22,6 +22,10 @@ describe("menuItemsForPath", () => {
     expect(menuItemsForPath("/owner/reservations").map((i) => i.href)).toContain("/owner/reservations");
   });
 
+  it("gives customers a Mapa entry right after Početna", () => {
+    expect(menuItemsForPath("/customer")[1]).toEqual({ label: "Mapa", href: "/customer/map" });
+  });
+
   it("has no items outside a role's pages", () => {
     expect(menuItemsForPath("/login")).toEqual([]);
     expect(menuItemsForPath("/")).toEqual([]);
