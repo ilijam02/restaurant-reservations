@@ -1,10 +1,13 @@
 -- Coverage for supabase/migrations/20260917140000_reservation_status_lifecycle.sql,
 -- 20260918100000_ongoing_moves_start_to_now.sql and
--- 20260918130000_reservation_lifecycle_review_fixes.sql:
+-- 20260918130000_reservation_lifecycle_review_fixes.sql and
+-- 20260919170000_reservation_status_undo.sql:
 -- update_reservation_status()'s transition graph (confirmed ->
 -- [preparing_order -> order_prepared ->] ongoing -> completed, plus
--- confirmed/order_prepared -> no_show only once starts_at has passed),
--- staff-only permission (and no anon access), an early "ongoing" moving
+-- confirmed/order_prepared -> no_show only once starts_at has passed), the
+-- one-step-at-a-time undo before the guest is seated (order_prepared ->
+-- preparing_order -> confirmed, status label only) and the steps back that
+-- stay rejected, staff-only permission (and no anon access), an early "ongoing" moving
 -- starts_at up to now() - only within 60 minutes of the booked start -,
 -- early completion shrinking ends_at so the freed table slot is actually
 -- bookable again through the exclusion constraint (not just a status
@@ -33,7 +36,7 @@
 -- into these security definer functions (search_path = '' bypasses
 -- tests.freeze_time()).
 begin;
-select plan(34);
+select plan(42);
 
 select tests.create_supabase_user('owner_e', 'ownere@test.com', null,
   '{"first_name":"Owner","last_name":"E","phone":"555-0009","role":"owner"}'::jsonb);
@@ -233,6 +236,38 @@ select lives_ok(
   'R3 confirmed -> preparing_order (it has a confirmed order)'
 );
 
+select lives_ok(
+  $$select public.update_reservation_status(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3 and status = 'preparing_order'),
+      'confirmed'
+    )$$,
+  'R3 preparing_order -> confirmed (undo of a misclicked "start preparing")'
+);
+
+select results_eq(
+  $$select status from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3$$,
+  $$values ('confirmed'::text)$$,
+  'R3 is back to confirmed'
+);
+
+select throws_ok(
+  $$select public.update_reservation_status(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3 and status = 'confirmed'),
+      'confirmed'
+    )$$,
+  'P0001',
+  'Rezervacija može biti vraćena na "Potvrđena" samo dok se porudžbina priprema.',
+  'a reservation that is already confirmed has nothing to step back from'
+);
+
+select lives_ok(
+  $$select public.update_reservation_status(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3 and status = 'confirmed'),
+      'preparing_order'
+    )$$,
+  'R3 confirmed -> preparing_order again after the undo'
+);
+
 select throws_ok(
   $$select public.update_reservation_status(
       (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3 and status = 'preparing_order'),
@@ -249,6 +284,32 @@ select lives_ok(
       'order_prepared'
     )$$,
   'R3 preparing_order -> order_prepared'
+);
+
+select lives_ok(
+  $$select public.update_reservation_status(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3 and status = 'order_prepared'),
+      'preparing_order'
+    )$$,
+  'R3 order_prepared -> preparing_order (undo of a misclicked "order is ready")'
+);
+
+select lives_ok(
+  $$select public.update_reservation_status(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3 and status = 'preparing_order'),
+      'order_prepared'
+    )$$,
+  'R3 preparing_order -> order_prepared once more'
+);
+
+select throws_ok(
+  $$select public.update_reservation_status(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3 and status = 'order_prepared'),
+      'confirmed'
+    )$$,
+  'P0001',
+  'Rezervacija može biti vraćena na "Potvrđena" samo dok se porudžbina priprema.',
+  'order_prepared cannot jump straight back to confirmed - the undo goes one step at a time'
 );
 
 select lives_ok(
@@ -271,6 +332,16 @@ select results_eq(
   $$select status from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3$$,
   $$values ('completed'::text)$$,
   'R3 ended up completed'
+);
+
+select throws_ok(
+  $$select public.update_reservation_status(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'I''s Café') and party_size = 3),
+      'preparing_order'
+    )$$,
+  'P0001',
+  'Priprema porudžbine je moguća samo iz statusa "Potvrđena" ili "Porudžbina spremna" rezervacije koja ima porudžbinu.',
+  'a completed reservation cannot be stepped back - only the pre-seating stages can be undone'
 );
 
 -- === R4: booked 3 days out - too far ahead to start early; later
