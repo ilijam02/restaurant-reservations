@@ -72,7 +72,7 @@ export function MenuItemCard({
       }`}
     >
       <MenuItemImage imageUrl={imageUrl} alt={name} className="aspect-video w-full object-cover" />
-      <div className="space-y-2 px-4 pt-1.5 pb-3">
+      <div className="space-y-2 px-4 pt-0 pb-2">
         <div className="min-w-0">
           <p ref={nameRef} className={`font-medium ${WRAP_LONG_WORDS} ${textExpanded ? "" : "truncate"}`}>
             {name}
