@@ -1,7 +1,7 @@
 "use server";
 
-import { createClient as createStatelessClient } from "@supabase/supabase-js";
 import { deletionBlockedMessage, fetchAccountDeletionPlan } from "@/lib/account-deletion";
+import { releaseVerifier, verifyPassword } from "@/lib/auth/verify-password";
 import { removeRestaurantImageFolder } from "@/lib/image-upload";
 import { createClient } from "@/lib/supabase/server";
 
@@ -17,11 +17,8 @@ const IMAGES_FAILED_ERROR = "Brisanje slika restorana nije uspelo. Nalog nije ob
 // re-verifies who is asking, refuses early with a readable reason, and does the
 // one thing SQL can't - removing the owner's image files.
 //
-// The password is checked here, on a throwaway client that doesn't persist a
-// session, so it can't rotate the real session's cookies. That makes it a guard
-// against a misclick or an unattended browser, not a security boundary: a
-// stolen session could call the RPC directly, as it could any other action the
-// account can take.
+// The password is checked here (see verifyPassword() for why that is a guard
+// against a misclick or an unattended browser, not a security boundary).
 //
 // Order matters, as in deleteRestaurantAction: the image folders can only be
 // removed while the restaurant rows still exist (the storage policy checks
@@ -45,16 +42,9 @@ export async function deleteAccountAction(typedEmail: string, password: string):
     return { ok: false, error: WRONG_PASSWORD_ERROR };
   }
 
-  const verifier = createStatelessClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
-  );
-  const { error: passwordError } = await verifier.auth.signInWithPassword({ email: user.email, password });
-  if (passwordError) return { ok: false, error: WRONG_PASSWORD_ERROR };
-  // Only this throwaway session: the default (global) scope would sign the
-  // user out everywhere.
-  await verifier.auth.signOut({ scope: "local" }).catch(() => {});
+  const verifier = await verifyPassword(user.email, password);
+  if (!verifier) return { ok: false, error: WRONG_PASSWORD_ERROR };
+  await releaseVerifier(verifier);
 
   const plan = await fetchAccountDeletionPlan(supabase);
   if (!plan) return { ok: false, error: DELETE_FAILED_ERROR };

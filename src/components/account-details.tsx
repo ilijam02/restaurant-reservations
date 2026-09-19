@@ -1,11 +1,13 @@
 import { DeleteAccountSection } from "@/components/delete-account-section";
+import { EditAccountSection } from "@/components/edit-account-section";
 import { fetchAccountDeletionPlan } from "@/lib/account-deletion";
 import { createClient } from "@/lib/supabase/server";
 
-// The body of every role's "Moj nalog" page: who the account is, and the
-// deletion section. Shared because nothing on it depends on the role except
-// the wording the section derives from the plan; each role's page still renders
-// its own AppHeader (a header is never applied automatically).
+// The body of every role's "Moj nalog" page: the form for editing the account's
+// details, and the deletion section. Shared because nothing on it depends on
+// the role except the wording the deletion section derives from the plan; each
+// role's page still renders its own AppHeader (a header is never applied
+// automatically).
 export async function AccountDetails() {
   const supabase = await createClient();
   const {
@@ -22,17 +24,20 @@ export async function AccountDetails() {
 
   return (
     <>
-      <section className="w-full max-w-3xl space-y-3 rounded-lg border border-stone-200 bg-white p-8 shadow-sm dark:border-stone-700 dark:bg-stone-800">
-        <h2 className="text-xl font-semibold">Podaci o nalogu</h2>
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2">
-          <dt className="text-stone-600 dark:text-stone-400">Ime i prezime</dt>
-          <dd>{profile ? `${profile.first_name} ${profile.last_name}` : "—"}</dd>
-          <dt className="text-stone-600 dark:text-stone-400">Email</dt>
-          <dd className="break-all">{user.email ?? "—"}</dd>
-          <dt className="text-stone-600 dark:text-stone-400">Telefon</dt>
-          <dd>{profile?.phone ?? "—"}</dd>
-        </dl>
-      </section>
+      {profile && user.email ? (
+        <EditAccountSection
+          initial={{
+            firstName: profile.first_name,
+            lastName: profile.last_name,
+            email: user.email,
+            phone: profile.phone,
+          }}
+        />
+      ) : (
+        <p role="alert" className="text-red-600 dark:text-red-400">
+          Podaci o nalogu trenutno nisu dostupni. Osvežite stranicu ili pokušajte ponovo kasnije.
+        </p>
+      )}
 
       {user.email && plan ? (
         <DeleteAccountSection email={user.email} plan={plan} />

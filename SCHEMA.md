@@ -27,7 +27,7 @@ One row per `auth.users` row — the signup fields Supabase Auth doesn't store i
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | = `auth.users.id`, cascades on user delete |
-| `first_name`, `last_name`, `phone` | text | required |
+| `first_name`, `last_name`, `phone` | text | required. **No DB-level format check**: the rules live in [validation.ts](src/lib/validation.ts) (signup page + account form + `updateAccountAction`), and `phone` is stored as E.164 (`+381601234567`) from signup/edits onward, but rows from before those rules can hold anything (`0601234567`, `555-0031`) — code must not assume the format. Email isn't here at all: it lives in `auth.users` and changes through Auth |
 | `role` | text | `customer` \| `employee` \| `owner` |
 | `created_at` | timestamptz | |
 
