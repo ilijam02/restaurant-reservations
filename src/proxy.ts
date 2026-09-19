@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { decideRedirect, type Role } from "@/lib/auth/redirect";
+import { decideRedirect } from "@/lib/auth/redirect";
+import { getProfileRole } from "@/lib/auth/role";
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -27,7 +28,7 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const role = (user?.user_metadata?.role as Role | undefined) ?? null;
+  const role = user ? await getProfileRole(supabase, user.id) : null;
 
   const redirectTo = decideRedirect(request.nextUrl.pathname, role);
   if (redirectTo) {
@@ -39,6 +40,11 @@ export async function proxy(request: NextRequest) {
   return supabaseResponse;
 }
 
+// No file-extension exclusion here (e.g. for .png): a role page whose last
+// segment is dynamic - /employee/restaurants/[id] - also matches
+// /employee/restaurants/x.png, which such an exclusion would let skip this
+// proxy (and its role gate) entirely. There's no public/ folder for the
+// exclusion to protect anyway.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

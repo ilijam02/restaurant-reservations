@@ -40,7 +40,7 @@ Not yet decided:
 **Implemented features:**
 
 - Login (`/login`) and signup (`/signup`) with email/password via Supabase Auth. Signup also collects first name, last name, phone, and role (customer/employee/owner), stored in a `profiles` table populated by a DB trigger (`supabase/migrations/`).
-- Role-based home pages (`/customer`, `/employee`, `/owner`) — title only, gated by `src/proxy.ts` (Next.js 16 renamed `middleware` to `proxy` — see `AGENTS.md`).
+- Role-based home pages (`/customer`, `/employee`, `/owner`) — title only. `src/proxy.ts` (Next.js 16 renamed `middleware` to `proxy` — see `AGENTS.md`) gates **every** path under `/customer`, `/employee` and `/owner`, not just the home pages: signed-out visitors go to `/login`, another role's user goes to their own home. It reads the role from `profiles.role` (never `user_metadata`, which users can edit themselves), and that column is not user-writable. A new page under a role folder is therefore gated automatically; per-record checks (ownership, accepted staff) still belong in the page/RLS.
 - A shared `AppHeader` component (`src/components/app-header.tsx`) renders a top-left dropdown menu (Početna, the role's own destinations, and logout — see the "AppHeader" line under Working conventions) on every page except `/login` and `/signup`, plus a back button next to it on every page except login/signup/the three home pages — see the "AppHeader" line under Working conventions.
 - All UI text is in Serbian.
 - `restaurants` table exists in the DB (`supabase/migrations/`) — schema only, no app code/UI yet. Minimal columns (`id`, `owner_id`, `name`, `created_at`); see the "Restaurants table" line under Decided in `ISSUES.md` for what's deliberately deferred.
