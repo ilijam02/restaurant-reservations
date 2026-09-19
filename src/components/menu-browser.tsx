@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { MenuItemImage } from "@/components/menu-item-image";
+import { MenuItemCard } from "@/components/menu-item-card";
 import { CartSummary, cartTotal, formatPrice, type CartItem } from "@/components/cart-summary";
 
 const UNCATEGORIZED_KEY = "__uncategorized";
@@ -252,38 +252,15 @@ export function MenuBrowser({
             <ul className="grid items-start gap-4 sm:grid-cols-2 md:grid-cols-3">
               {group.items.map((item) => (
                 <li key={item.id}>
-                  <div
-                    className={`overflow-hidden rounded-lg border border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-800 ${
-                      item.is_available ? "" : "opacity-60"
-                    }`}
-                  >
-                    <MenuItemImage
-                      imageUrl={item.image_url}
-                      alt={item.name}
-                      className="aspect-video w-full object-cover"
-                    />
-                    <div className="space-y-2 px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="font-medium">{item.name}</p>
-                        {item.description && (
-                          <p className="text-sm text-stone-600 dark:text-stone-400">{item.description}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm text-stone-600 dark:text-stone-400">
-                          {item.is_available ? formatPrice(item.price) : "Nedostupno"}
-                        </p>
-                        <button
-                          type="button"
-                          disabled={!item.is_available}
-                          onClick={() => (expanded?.itemId === item.id ? closeExpanded() : openItem(item))}
-                          className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
-                        >
-                          {expanded?.itemId === item.id ? "Zatvori" : "Dodaj"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <MenuItemCard
+                    name={item.name}
+                    description={item.description}
+                    price={item.price}
+                    imageUrl={item.image_url}
+                    isAvailable={item.is_available}
+                    actionLabel={expanded?.itemId === item.id ? "Zatvori" : "Dodaj"}
+                    onAction={() => (expanded?.itemId === item.id ? closeExpanded() : openItem(item))}
+                  />
 
                   {expanded?.itemId === item.id && (
                     <div className="mt-2 space-y-3 rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900/40">
