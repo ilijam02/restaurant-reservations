@@ -1,7 +1,10 @@
+import { FallbackImage } from "@/components/fallback-image";
+
 // restaurants.image_url is nullable (an owner may never upload one) - when
-// it's null this renders an inline SVG placeholder rather than a stored
-// default, same approach and reasoning as MenuItemImage (inline so it can
-// respond to dark: like the rest of the design system).
+// it's null, or the file can't be loaded, this renders an inline SVG
+// placeholder rather than a stored default, same approach and reasoning as
+// MenuItemImage (inline so it can respond to dark: like the rest of the
+// design system).
 export function RestaurantImage({
   imageUrl,
   alt,
@@ -11,12 +14,7 @@ export function RestaurantImage({
   alt: string;
   className?: string;
 }) {
-  if (imageUrl) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={imageUrl} alt={alt} loading="lazy" className={className} />;
-  }
-
-  return (
+  const placeholder = (
     <svg
       viewBox="0 0 160 100"
       role={alt ? "img" : undefined}
@@ -33,4 +31,7 @@ export function RestaurantImage({
       </g>
     </svg>
   );
+
+  if (!imageUrl) return placeholder;
+  return <FallbackImage src={imageUrl} alt={alt} loading="lazy" className={className} fallback={placeholder} />;
 }

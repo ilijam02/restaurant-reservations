@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { DeleteRestaurantSection } from "@/components/delete-restaurant-section";
 import { EditRestaurantForm } from "@/components/edit-restaurant-form";
+import { fetchDeletionPlan } from "@/lib/restaurant-deletion";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function EditRestaurantPage({
@@ -18,6 +20,7 @@ export default async function EditRestaurantPage({
     .from("restaurants")
     .select("id, name, capacity, default_stay_minutes, image_url, address, latitude, longitude, owner_id")
     .eq("id", id)
+    .is("archived_at", null)
     .single();
 
   // The restaurants SELECT policy is public (any authenticated user, needed
@@ -26,6 +29,10 @@ export default async function EditRestaurantPage({
   if (!restaurant || restaurant.owner_id !== user!.id) {
     redirect("/owner");
   }
+
+  // For the delete section below; without it (a failed lookup) the section is
+  // simply left out rather than shown with made-up numbers.
+  const deletionPlan = await fetchDeletionPlan(supabase, id);
 
   const { data: hours } = await supabase
     .from("restaurant_hours")
@@ -65,6 +72,9 @@ export default async function EditRestaurantPage({
         layouts={layouts ?? []}
         tables={tables ?? []}
       />
+      {deletionPlan && (
+        <DeleteRestaurantSection restaurantId={restaurant.id} restaurantName={restaurant.name} plan={deletionPlan} />
+      )}
     </main>
   );
 }

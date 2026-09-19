@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   IMAGE_TOO_LARGE_ERROR,
   IMAGE_TYPE_ERROR,
   fitWithin,
   pathFromPublicUrl,
+  removeRestaurantImageFolder,
   validateImageFile,
 } from "./image-upload";
 
@@ -62,5 +64,60 @@ describe("pathFromPublicUrl", () => {
   it("returns null for URLs that aren't in this bucket", () => {
     expect(pathFromPublicUrl("https://example.com/photo.jpg")).toBeNull();
     expect(pathFromPublicUrl("https://abc.supabase.co/storage/v1/object/public/other-bucket/x.webp")).toBeNull();
+  });
+});
+
+describe("removeRestaurantImageFolder", () => {
+  // A fake bucket holding `names` in one folder. `removes` controls whether
+  // remove() actually deletes (false = it reports success but deletes nothing).
+  function fakeClient(names: string[], { listError = false, removes = true, removeError = false } = {}) {
+    let remaining = [...names];
+    const removedPaths: string[] = [];
+    const client = {
+      storage: {
+        from: () => ({
+          list: async (_folder: string, options: { limit: number }) =>
+            listError
+              ? { data: null, error: new Error("list failed") }
+              : { data: remaining.slice(0, options.limit).map((name) => ({ name })), error: null },
+          remove: async (paths: string[]) => {
+            if (removeError) return { data: null, error: new Error("remove failed") };
+            if (!removes) return { data: [], error: null };
+            removedPaths.push(...paths);
+            remaining = remaining.filter((name) => !paths.includes(`r1/${name}`));
+            return { data: paths.map((name) => ({ name })), error: null };
+          },
+        }),
+      },
+    };
+    return { client: client as unknown as SupabaseClient, removedPaths };
+  }
+
+  it("succeeds on an empty folder without removing anything", async () => {
+    const { client, removedPaths } = fakeClient([]);
+    expect(await removeRestaurantImageFolder(client, "r1")).toBe(true);
+    expect(removedPaths).toEqual([]);
+  });
+
+  it("removes every object under the restaurant's folder, across several pages", async () => {
+    const names = Array.from({ length: 250 }, (_, i) => `${i}.jpg`);
+    const { client, removedPaths } = fakeClient(names);
+    expect(await removeRestaurantImageFolder(client, "r1")).toBe(true);
+    expect(removedPaths).toEqual(names.map((name) => `r1/${name}`));
+  });
+
+  it("reports failure if listing fails", async () => {
+    const { client } = fakeClient(["a.jpg"], { listError: true });
+    expect(await removeRestaurantImageFolder(client, "r1")).toBe(false);
+  });
+
+  it("reports failure if removing fails", async () => {
+    const { client } = fakeClient(["a.jpg"], { removeError: true });
+    expect(await removeRestaurantImageFolder(client, "r1")).toBe(false);
+  });
+
+  it("reports failure instead of looping when remove deletes nothing", async () => {
+    const { client } = fakeClient(["a.jpg"], { removes: false });
+    expect(await removeRestaurantImageFolder(client, "r1")).toBe(false);
   });
 });

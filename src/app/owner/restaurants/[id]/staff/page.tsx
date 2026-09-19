@@ -15,6 +15,7 @@ export default async function OwnerRestaurantStaffPage({ params }: { params: Pro
     .select("id, name")
     .eq("id", id)
     .eq("owner_id", user!.id)
+    .is("archived_at", null)
     .single();
 
   if (!restaurant) {

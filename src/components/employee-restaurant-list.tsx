@@ -10,6 +10,7 @@ export async function EmployeeRestaurantList() {
   const { data: restaurants } = await supabase
     .from("restaurants")
     .select("id, name, image_url")
+    .is("archived_at", null)
     .order("name");
 
   const { data: applications } = await supabase

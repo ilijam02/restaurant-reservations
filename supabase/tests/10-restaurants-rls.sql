@@ -127,20 +127,23 @@ select results_eq(
   'a customer can read a restaurant''s coordinates'
 );
 
--- Owner B cannot delete Owner A's restaurant.
+-- Nobody can delete a restaurant with a plain delete any more: it cascades
+-- to reservations and orders, so deleting goes through delete_restaurant()
+-- (see 140-delete-restaurant.sql), which archives one that has history.
 select tests.authenticate_as('owner_b');
-select results_eq(
-  $$delete from public.restaurants where name = 'A''s Bistro & Grill' returning 1$$,
-  ARRAY[]::integer[],
+select throws_ok(
+  $$delete from public.restaurants where name = 'A''s Bistro & Grill'$$,
+  '42501',
+  null,
   'owner_b cannot delete owner_a''s restaurant'
 );
 
--- Owner A can delete their own restaurant.
 select tests.authenticate_as('owner_a');
-select results_eq(
-  $$delete from public.restaurants where name = 'A''s Bistro & Grill' returning 1$$,
-  ARRAY[1],
-  'owner_a can delete their own restaurant'
+select throws_ok(
+  $$delete from public.restaurants where name = 'A''s Bistro & Grill'$$,
+  '42501',
+  null,
+  'owner_a cannot delete their own restaurant with a plain delete either'
 );
 
 select * from finish();

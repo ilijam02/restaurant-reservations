@@ -14,7 +14,7 @@ export default async function CustomerRestaurantPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: restaurant } = await supabase.from("restaurants").select("id, name, address, latitude").eq("id", id).single();
+  const { data: restaurant } = await supabase.from("restaurants").select("id, name, address, latitude").eq("id", id).is("archived_at", null).single();
 
   if (!restaurant) {
     notFound();

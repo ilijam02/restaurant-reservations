@@ -2,6 +2,8 @@
 
 import { getProfileRole } from "@/lib/auth/role";
 import { geocodeAddress, type GeocodeResult } from "@/lib/geocode";
+import { removeRestaurantImageFolder } from "@/lib/image-upload";
+import { fetchDeletionPlan } from "@/lib/restaurant-deletion";
 import { createClient } from "@/lib/supabase/server";
 
 export type GeocodeActionResult =
@@ -72,4 +74,59 @@ async function claimSlot(supabase: Awaited<ReturnType<typeof createClient>>): Pr
     return null;
   }
   return data === true;
+}
+
+export type DeleteRestaurantResult =
+  | { ok: true; outcome: "deleted" | "archived" }
+  | { ok: false; error: string };
+
+const DELETE_FAILED_ERROR = "Brisanje restorana nije uspelo. Pokušajte ponovo.";
+const IMAGES_FAILED_ERROR = "Brisanje slika restorana nije uspelo. Restoran nije obrisan - pokušajte ponovo.";
+const NOT_FOUND_RESTAURANT_ERROR = "Restoran ne postoji.";
+
+// Deletes the restaurant, or archives it if it has reservation history (that
+// choice is delete_restaurant()'s, in the database). Order matters: the
+// restaurant's image files can only be removed while its row still exists (the
+// storage policy checks ownership through it), so they go first - but only on
+// the path where the row will really be deleted, and only after checking that
+// nothing blocks the delete, so a refused delete never costs the images. If the
+// files fail to go, nothing is deleted and the owner can retry. A booking that
+// slips in between the plan check and the delete is still refused by
+// delete_restaurant() itself, at the cost of that restaurant having lost its
+// images. The same happens if the delete call fails for any other reason
+// (network drop, DB error) right after a successful purge: the restaurant
+// stays live with image_url values pointing at removed files. That's
+// tolerable - RestaurantImage/MenuItemImage fall back to the placeholder when
+// a file fails to load (see FallbackImage), and re-uploading fixes it. The
+// order can't be flipped, since the storage policy needs the restaurant row.
+export async function deleteRestaurantAction(restaurantId: string): Promise<DeleteRestaurantResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || (await getProfileRole(supabase, user.id)) !== "owner") {
+    return { ok: false, error: DELETE_FAILED_ERROR };
+  }
+
+  const plan = await fetchDeletionPlan(supabase, restaurantId);
+  if (!plan) return { ok: false, error: NOT_FOUND_RESTAURANT_ERROR };
+  if (plan.active_reservations > 0) {
+    return {
+      ok: false,
+      error: "Restoran ima aktivne rezervacije. Otkažite ih ili sačekajte da se završe, pa pokušajte ponovo.",
+    };
+  }
+
+  if (plan.total_reservations === 0 && !(await removeRestaurantImageFolder(supabase, restaurantId))) {
+    return { ok: false, error: IMAGES_FAILED_ERROR };
+  }
+
+  const { data: outcome, error } = await supabase.rpc("delete_restaurant", { p_restaurant_id: restaurantId });
+  if (error) {
+    // The RPC's own messages (raised with the default P0001) are already
+    // user-facing Serbian; anything else (network, permission) isn't.
+    return { ok: false, error: error.code === "P0001" ? error.message : DELETE_FAILED_ERROR };
+  }
+
+  return { ok: true, outcome: outcome === "archived" ? "archived" : "deleted" };
 }

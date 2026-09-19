@@ -160,14 +160,16 @@ function noRefundWarning(status: ReservationStatus) {
 // A real modal: focus moves into it (onto the safe "Ne, zadrži" choice),
 // Tab stays inside it, Escape closes it, and focus goes back to whatever
 // opened it afterwards. The list behind it is made inert by the caller.
-function CancelDialog({
+export function CancelDialog({
   description,
   warning,
+  label = "Potvrda otkazivanja rezervacije",
   onConfirm,
   onClose,
 }: {
   description: string;
   warning: string | null;
+  label?: string;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -224,7 +226,7 @@ function CancelDialog({
         ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
-        aria-label="Potvrda otkazivanja rezervacije"
+        aria-label={label}
         aria-describedby={descriptionId}
         className="w-full max-w-sm space-y-4 rounded-lg border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-700 dark:bg-stone-800"
       >

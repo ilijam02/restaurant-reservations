@@ -1,6 +1,6 @@
 import type { ReservationRow } from "@/components/reservations-list";
 import type { createClient } from "@/lib/supabase/server";
-import { RESERVATION_LIST_SELECT } from "@/lib/reservation-select";
+import { OWNER_RESERVATION_LIST_SELECT } from "@/lib/reservation-select";
 
 // PostgREST turns `.in()` into part of the request URL, so a very long id
 // list (every distinct customer an owner has ever had) can overflow URL length
@@ -27,7 +27,14 @@ export async function fetchOwnerReservations(
   supabase: Awaited<ReturnType<typeof createClient>>,
   restaurantId?: string,
 ): Promise<{ reservations: ReservationRow[]; error: string | null }> {
-  let query = supabase.from("reservations").select(RESERVATION_LIST_SELECT).order("starts_at", { ascending: false });
+  // !inner + the archived_at filter keeps the archived (deleted) restaurants'
+  // reservations out of the owner's all-restaurants view; they stay in the
+  // database for the customers' own histories.
+  let query = supabase
+    .from("reservations")
+    .select(OWNER_RESERVATION_LIST_SELECT)
+    .is("restaurants.archived_at", null)
+    .order("starts_at", { ascending: false });
   if (restaurantId) {
     query = query.eq("restaurant_id", restaurantId);
   }

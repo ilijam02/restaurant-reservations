@@ -1,7 +1,8 @@
-// image_url is nullable in the DB and there's no owner upload UI yet (see
-// the "Menu items - image" decision in ISSUES.md) - when it's null, this
-// renders a placeholder instead of reading a stored default from the
-// database. It's an inline SVG (not a static file) specifically so it can
+import { FallbackImage } from "@/components/fallback-image";
+
+// image_url is nullable in the DB - when it's null, or the file can't be
+// loaded, this renders a placeholder instead of reading a stored default from
+// the database. It's an inline SVG (not a static file) specifically so it can
 // respond to dark: like the rest of the design system.
 export function MenuItemImage({
   imageUrl,
@@ -12,12 +13,7 @@ export function MenuItemImage({
   alt: string;
   className?: string;
 }) {
-  if (imageUrl) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={imageUrl} alt={alt} className={className} />;
-  }
-
-  return (
+  const placeholder = (
     <svg
       viewBox="0 0 160 90"
       role="img"
@@ -43,4 +39,7 @@ export function MenuItemImage({
       </g>
     </svg>
   );
+
+  if (!imageUrl) return placeholder;
+  return <FallbackImage src={imageUrl} alt={alt} className={className} fallback={placeholder} />;
 }
