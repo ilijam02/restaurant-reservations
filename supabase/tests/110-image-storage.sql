@@ -23,7 +23,9 @@ insert into public.restaurants (owner_id, name) values (tests.get_supabase_uid('
 select tests.authenticate_as('owner_b');
 insert into public.restaurants (owner_id, name) values (tests.get_supabase_uid('owner_b'), 'Slike B');
 
-select tests.clear_authentication();
+-- tests.clear_authentication() would leave the role as anon, which can't read
+-- storage.buckets (RLS, no anon policy) - go back to the superuser instead.
+reset role;
 select is(
   (select public from storage.buckets where id = 'restaurant-images'),
   true,
@@ -107,15 +109,25 @@ select tests.authenticate_as('owner_a');
 update storage.objects
   set name = (select id from public.restaurants where name = 'Slike B')::text || '/moved.webp'
   where bucket_id = 'restaurant-images';
+-- Checked as the superuser: as owner_a, a moved object would be hidden by the
+-- select policy (it would no longer be in owner_a's folder), so a count as
+-- owner_a would read 0 whether or not the update worked.
+reset role;
 select is(
   (select count(*) from storage.objects
-   where bucket_id = 'restaurant-images' and name like '%/moved.webp'),
-  0::bigint,
-  'owner_a cannot move their object into owner_b''s folder (no update policy)'
+   where bucket_id = 'restaurant-images'
+     and name = (select id from public.restaurants where name = 'Slike A')::text || '/cover.webp'),
+  1::bigint,
+  'owner_a cannot move their object into owner_b''s folder (no update policy) - it is still at its original path'
 );
 
 -- === Delete ===
+-- Newer Supabase Storage versions have a storage.protect_delete() trigger that
+-- rejects direct deletes from storage.objects unless this setting is on. It is
+-- harmless where that trigger doesn't exist, and RLS still decides which rows
+-- the delete can see.
 select tests.authenticate_as('owner_b');
+set local storage.allow_delete_query = 'true';
 delete from storage.objects where bucket_id = 'restaurant-images';
 
 select tests.authenticate_as('owner_a');
@@ -125,6 +137,7 @@ select is(
   'owner_b''s delete did not remove owner_a''s object'
 );
 
+set local storage.allow_delete_query = 'true';
 delete from storage.objects where bucket_id = 'restaurant-images';
 select is(
   (select count(*) from storage.objects where bucket_id = 'restaurant-images'),

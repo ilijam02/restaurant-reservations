@@ -79,8 +79,11 @@ export function AppHeader({ backHref }: { backHref?: string }) {
                   onClick={(event) => {
                     setMenuOpen(false);
                     // The current page's link stays in the menu; clicking it
-                    // just refreshes the page rather than navigating.
-                    if (current) {
+                    // just refreshes the page rather than navigating. Only a
+                    // plain click: ctrl/cmd/shift/alt-click still open it in a
+                    // new tab or window like any other link.
+                    const modified = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
+                    if (current && !modified) {
                       event.preventDefault();
                       router.refresh();
                     }

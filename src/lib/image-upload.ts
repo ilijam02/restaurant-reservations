@@ -2,8 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const IMAGE_BUCKET = "restaurant-images";
 
-// Must stay in sync with the bucket's allowed_mime_types in
-// supabase/migrations/20260919120000_restaurant_image_storage.sql.
+// What an owner may pick. Every browser can decode all three. What actually
+// gets uploaded is always a JPEG (see resizeImage), which is within the
+// bucket's allowed_mime_types (supabase/migrations/20260919120000_...).
 export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 export const ACCEPT_ATTRIBUTE = ACCEPTED_IMAGE_TYPES.join(",");
 
@@ -42,10 +43,12 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob | n
   return new Promise((resolve) => canvas.toBlob(resolve, type, OUTPUT_QUALITY));
 }
 
-// Downscales in the browser before upload. Output is WebP where the browser
-// can encode it (all current ones), JPEG otherwise - the check is on the
-// returned blob's type, since toBlob silently falls back to PNG for an
-// unsupported type. Returns null if the file can't be decoded as an image.
+// Downscales in the browser before upload and re-encodes as JPEG. JPEG rather
+// than WebP because every browser can encode it - some can't encode WebP
+// (toBlob then silently returns a PNG), which would need a fallback path.
+// JPEG has no transparency, so the canvas is painted white first; otherwise a
+// transparent PNG would come out with black regions. Returns null if the file
+// can't be decoded as an image.
 export async function resizeImage(file: File, maxDimension: number): Promise<Blob | null> {
   let bitmap: ImageBitmap;
   try {
@@ -63,16 +66,12 @@ export async function resizeImage(file: File, maxDimension: number): Promise<Blo
     bitmap.close();
     return null;
   }
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
   context.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
 
-  const webp = await canvasToBlob(canvas, "image/webp");
-  if (webp && webp.type === "image/webp") return webp;
   return canvasToBlob(canvas, "image/jpeg");
-}
-
-function extensionFor(blob: Blob) {
-  return blob.type === "image/webp" ? "webp" : "jpg";
 }
 
 // Objects are stored at "<restaurant_id>/<random>.<ext>" - the storage RLS
@@ -85,7 +84,7 @@ export async function uploadRestaurantImage(
   restaurantId: string,
   blob: Blob,
 ): Promise<{ url: string } | { error: string }> {
-  const path = `${restaurantId}/${crypto.randomUUID()}.${extensionFor(blob)}`;
+  const path = `${restaurantId}/${crypto.randomUUID()}.jpg`;
   const { error } = await supabase.storage.from(IMAGE_BUCKET).upload(path, blob, { contentType: blob.type });
   if (error) return { error: IMAGE_UPLOAD_ERROR };
   return { url: supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl };
@@ -97,14 +96,24 @@ export function pathFromPublicUrl(url: string): string | null {
   const marker = `/storage/v1/object/public/${IMAGE_BUCKET}/`;
   const index = url.indexOf(marker);
   if (index === -1) return null;
-  return decodeURIComponent(url.slice(index + marker.length).split("?")[0]);
+  try {
+    return decodeURIComponent(url.slice(index + marker.length).split("?")[0]);
+  } catch {
+    // A malformed escape sequence in a hand-edited URL.
+    return null;
+  }
 }
 
 // Best-effort cleanup of an image that's no longer referenced. A failure
-// here just leaves an orphaned object - never worth failing a save over.
+// here just leaves an orphaned object - never worth failing a save over, so
+// nothing in here is allowed to throw either.
 export async function removeStoredImage(supabase: SupabaseClient, url: string | null | undefined) {
   if (!url) return;
-  const path = pathFromPublicUrl(url);
-  if (!path) return;
-  await supabase.storage.from(IMAGE_BUCKET).remove([path]);
+  try {
+    const path = pathFromPublicUrl(url);
+    if (!path) return;
+    await supabase.storage.from(IMAGE_BUCKET).remove([path]);
+  } catch {
+    // Leave the object orphaned.
+  }
 }

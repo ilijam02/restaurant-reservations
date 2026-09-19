@@ -44,8 +44,15 @@ export function ImagePicker({
   // Object URLs are created when a file is picked (not derived in an effect)
   // and released whenever they're replaced or the picker unmounts.
   const previewUrlRef = useRef<string | null>(null);
-  useEffect(() => () => {
-    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  // Also tells an in-flight resize that the picker went away, so it doesn't
+  // create an object URL after the cleanup below has already run.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
   }, []);
 
   function setPreview(blob: Blob | null) {
@@ -69,6 +76,7 @@ export function ImagePicker({
 
     setProcessing(true);
     const blob = await resizeImage(file, maxDimension);
+    if (!mountedRef.current) return;
     setProcessing(false);
 
     if (!blob) {

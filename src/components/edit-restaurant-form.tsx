@@ -177,6 +177,9 @@ export function EditRestaurantForm({
 }) {
   const router = useRouter();
   const [name, setName] = useState(restaurant.name);
+  // The image currently stored on the restaurant row. Kept in state (not read
+  // from the prop) because it changes mid-save - see the note where it's set.
+  const [imageUrl, setImageUrl] = useState(restaurant.image_url);
   const [imageChange, setImageChange] = useState<ImageChange>(UNCHANGED_IMAGE);
   const [capacity, setCapacity] = useState(restaurant.capacity?.toString() ?? "");
   const [defaultStayMinutes, setDefaultStayMinutes] = useState(
@@ -349,6 +352,50 @@ export function EditRestaurantForm({
       return original.name !== s.name || (!hasActiveLayouts && original.capacity !== Number(s.capacity));
     });
 
+    // The restaurant row (name, stay time, image) is the first thing written,
+    // straight after the read-only pre-checks above: the new image uploads
+    // before any write, so a failed upload leaves nothing half-saved, and a
+    // failed row write removes the upload again. The old object is deleted
+    // only once the row write has landed.
+    let uploadedUrl: string | null = null;
+    if (imageChange.kind === "replace") {
+      const uploaded = await uploadRestaurantImage(supabase, restaurant.id, imageChange.blob);
+      if ("error" in uploaded) {
+        setLoading(false);
+        setError(uploaded.error);
+        return;
+      }
+      uploadedUrl = uploaded.url;
+    }
+
+    const { error: restaurantError } = await supabase
+      .from("restaurants")
+      .update({
+        name,
+        default_stay_minutes: Number(defaultStayMinutes),
+        // Left out entirely when unchanged, so a save never touches the column.
+        ...(imageChange.kind === "replace" ? { image_url: uploadedUrl } : {}),
+        ...(imageChange.kind === "remove" ? { image_url: null } : {}),
+      })
+      .eq("id", restaurant.id);
+
+    if (restaurantError) {
+      await removeStoredImage(supabase, uploadedUrl);
+      setLoading(false);
+      setError(restaurantError.code === "23514" ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
+      return;
+    }
+
+    if (imageChange.kind !== "unchanged") {
+      await removeStoredImage(supabase, imageUrl);
+      // The row now points at the new image (or none). Track that locally and
+      // clear the pending change: if a later step below fails and the owner
+      // retries, this form must not upload the same image a second time or
+      // try to delete the old one again.
+      setImageUrl(imageChange.kind === "replace" ? uploadedUrl : null);
+      setImageChange(UNCHANGED_IMAGE);
+    }
+
     // Layouts: new ones first (real ids known before anything references
     // them, is_active included directly in the insert), then removed ones
     // (cascades their tables at the DB level).
@@ -400,39 +447,6 @@ export function EditRestaurantForm({
       setError(SAVE_ERROR);
       return;
     }
-
-    // Same order as the menu item editor: upload first so the URL is part
-    // of the row write, delete the old object only once that write lands.
-    let uploadedUrl: string | null = null;
-    if (imageChange.kind === "replace") {
-      const uploaded = await uploadRestaurantImage(supabase, restaurant.id, imageChange.blob);
-      if ("error" in uploaded) {
-        setLoading(false);
-        setError(uploaded.error);
-        return;
-      }
-      uploadedUrl = uploaded.url;
-    }
-
-    const { error: restaurantError } = await supabase
-      .from("restaurants")
-      .update({
-        name,
-        default_stay_minutes: Number(defaultStayMinutes),
-        // Left out entirely when unchanged, so a save never touches the column.
-        ...(imageChange.kind === "replace" ? { image_url: uploadedUrl } : {}),
-        ...(imageChange.kind === "remove" ? { image_url: null } : {}),
-      })
-      .eq("id", restaurant.id);
-
-    if (restaurantError) {
-      await removeStoredImage(supabase, uploadedUrl);
-      setLoading(false);
-      setError(restaurantError.code === "23514" ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
-      return;
-    }
-
-    if (imageChange.kind !== "unchanged") await removeStoredImage(supabase, restaurant.image_url);
 
     const { error: deleteHoursError } = await supabase
       .from("restaurant_hours")
@@ -712,7 +726,7 @@ export function EditRestaurantForm({
 
       <ImagePicker
         label="Slika restorana"
-        currentUrl={restaurant.image_url}
+        currentUrl={imageUrl}
         value={imageChange}
         onChange={setImageChange}
         maxDimension={RESTAURANT_IMAGE_MAX_DIMENSION}

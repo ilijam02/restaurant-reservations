@@ -53,6 +53,12 @@ describe("pathFromPublicUrl", () => {
     ).toBe("r1/x.webp");
   });
 
+  it("returns null instead of throwing on a malformed escape sequence", () => {
+    expect(
+      pathFromPublicUrl("https://abc.supabase.co/storage/v1/object/public/restaurant-images/r1/%E0%A4%A.jpg"),
+    ).toBeNull();
+  });
+
   it("returns null for URLs that aren't in this bucket", () => {
     expect(pathFromPublicUrl("https://example.com/photo.jpg")).toBeNull();
     expect(pathFromPublicUrl("https://abc.supabase.co/storage/v1/object/public/other-bucket/x.webp")).toBeNull();
