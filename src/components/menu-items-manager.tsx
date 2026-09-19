@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { MenuItemImage } from "@/components/menu-item-image";
 import { MenuItemEditor, type MenuItemRow } from "@/components/menu-item-editor";
+import { removeStoredImage } from "@/lib/image-upload";
 
 const SAVE_ERROR = "Radnja nije uspela. Pokušajte ponovo.";
 const UNCATEGORIZED_KEY = "__uncategorized";
@@ -83,17 +84,19 @@ export function MenuItemsManager({
     router.refresh();
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(item: MenuItemRow) {
     setError(null);
-    setPendingId(id);
+    setPendingId(item.id);
     const supabase = createClient();
-    const { error } = await supabase.from("menu_items").delete().eq("id", id);
-    setPendingId(null);
+    const { error } = await supabase.from("menu_items").delete().eq("id", item.id);
 
     if (error) {
+      setPendingId(null);
       setError(SAVE_ERROR);
       return;
     }
+    await removeStoredImage(supabase, item.image_url);
+    setPendingId(null);
     router.refresh();
   }
 
@@ -168,7 +171,7 @@ export function MenuItemsManager({
                       </button>
                     </div>
                     <MenuItemImage
-                      imageUrl={null}
+                      imageUrl={item.image_url}
                       alt={item.name}
                       className="size-12 shrink-0 rounded-md object-cover"
                     />
@@ -195,7 +198,7 @@ export function MenuItemsManager({
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDelete(item.id)}
+                      onClick={() => handleDelete(item)}
                       disabled={pendingId === item.id}
                       className="shrink-0 rounded-md border border-stone-300 px-3 py-1 text-sm text-red-600 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-600 dark:text-red-400 dark:hover:bg-stone-700"
                     >

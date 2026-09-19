@@ -45,6 +45,7 @@ One row per `auth.users` row — the signup fields Supabase Auth doesn't store i
 | `name` | text | |
 | `capacity` | integer, nullable | plain manual cap; `null` = unlimited. **Only meaningful/written when the restaurant has no sections and no active layout** — once either exists, effective capacity is computed live from them instead (app logic, see `src/lib/capacity-cascade.ts`) and this column is left stale on purpose. |
 | `default_stay_minutes` | integer, not null, default 90 | constrained to 30–180, matching `create_reservation()`'s own duration cap |
+| `image_url` | text, nullable | full public URL of the restaurant's cover image in the `restaurant-images` bucket (see Storage below); when null, `RestaurantImage` renders an inline SVG placeholder client-side |
 | `created_at` | timestamptz | |
 
 **RLS:** select is open to any authenticated user (any role — needed so customers/employees can browse). Insert is restricted to accounts with `profiles.role = 'owner'`. Update/delete restricted to the owning `owner_id`.
@@ -171,7 +172,7 @@ The capacity pre-check exists specifically to narrow a real bug it was built aro
 | `category_id` | uuid FK → `menu_categories`, **set null** on delete | nullable — items can be uncategorized |
 | `name`, `description` | text | |
 | `price` | numeric(10,2), `>= 0` | no currency column — RSD assumed, app is Serbian-only elsewhere too |
-| `image_url` | text, nullable | **no owner upload UI yet** — when null, `MenuItemImage` renders an inline SVG placeholder client-side instead of a stored default image |
+| `image_url` | text, nullable | full public URL of the item's photo in the `restaurant-images` bucket (see Storage below); when null, `MenuItemImage` renders an inline SVG placeholder client-side instead of a stored default image |
 | `is_available` | boolean, default true | |
 | `display_order` | integer | |
 
@@ -182,6 +183,15 @@ A modifier group on one item (e.g. required single-select "Veličina"). `menu_it
 The actual pickable values within a group (e.g. "Mala"/"Srednja"/"Velika"). `option_id` FK, cascade. `price_delta numeric(10,2)` applied on top of the item's base price.
 
 **RLS for all four menu tables:** select open to any authenticated user; insert/update/delete restricted to the owner, verified by joining all the way up to `restaurants.owner_id`. `menu_items.category_id` and `menu_item_options`/`_choices`'s parent references get the same same-restaurant cross-check as `tables.layout_id`/`section_id` above.
+
+---
+
+## Storage
+
+### `restaurant-images` bucket
+One **public** bucket ([restaurant_image_storage.sql](supabase/migrations/20260919120000_restaurant_image_storage.sql)) holding both restaurant cover images and menu item photos. Limits: 5 MiB per object, `image/jpeg` / `image/png` / `image/webp` only (the client downscales and re-encodes before upload, so real objects are far smaller — the bucket limits are a backstop, not the only check). Objects are stored at `<restaurant_id>/<random uuid>.<webp|jpg>`; the random name means replacing an image always yields a new URL, so nothing caches the old one. `restaurants.image_url` / `menu_items.image_url` store the full public URL, and the object path is recovered from it (`pathFromPublicUrl` in `src/lib/image-upload.ts`) when an image is replaced or its item deleted.
+
+**RLS on `storage.objects`:** reads of a public bucket by URL bypass RLS, so there is no public select policy. Insert, select, and delete are each restricted to the owner of the restaurant named by the object path's first segment (compared as text against `restaurants.id`, so a non-uuid folder just fails the policy instead of raising). Select exists only because the Storage API must see an object to delete it. There is deliberately **no update policy**, so an object can't be moved into another restaurant's folder. Employees and customers can't write at all.
 
 ---
 

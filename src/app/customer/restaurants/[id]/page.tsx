@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { MenuBrowser } from "@/components/menu-browser";
+import { RestaurantImage } from "@/components/restaurant-image";
 import type { CartItem } from "@/components/cart-summary";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,7 +13,7 @@ export default async function CustomerRestaurantPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: restaurant } = await supabase.from("restaurants").select("id, name").eq("id", id).single();
+  const { data: restaurant } = await supabase.from("restaurants").select("id, name, image_url").eq("id", id).single();
 
   if (!restaurant) {
     notFound();
@@ -50,6 +51,11 @@ export default async function CustomerRestaurantPage({
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref="/customer" />
+      <RestaurantImage
+        imageUrl={restaurant.image_url}
+        alt=""
+        className="aspect-video w-full max-w-2xl rounded-lg object-cover"
+      />
       <h1 className="text-3xl font-bold">{restaurant.name}</h1>
       <MenuBrowser
         restaurantId={id}

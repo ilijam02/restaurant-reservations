@@ -2,6 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { ImagePicker, UNCHANGED_IMAGE, type ImageChange } from "@/components/image-picker";
+import { MenuItemImage } from "@/components/menu-item-image";
+import { MENU_ITEM_IMAGE_MAX_DIMENSION, removeStoredImage, uploadRestaurantImage } from "@/lib/image-upload";
 
 export type MenuItemOptionChoiceRow = { id: string; name: string; price_delta: number; display_order: number };
 export type MenuItemOptionRow = {
@@ -18,6 +21,7 @@ export type MenuItemRow = {
   name: string;
   description: string | null;
   price: number;
+  image_url: string | null;
   is_available: boolean;
   display_order: number;
   options: MenuItemOptionRow[];
@@ -68,6 +72,7 @@ export function MenuItemEditor({
   const [price, setPrice] = useState(item ? item.price.toString() : "");
   const [categoryId, setCategoryId] = useState(item?.category_id ?? "");
   const [isAvailable, setIsAvailable] = useState(item?.is_available ?? true);
+  const [imageChange, setImageChange] = useState<ImageChange>(UNCHANGED_IMAGE);
   const [options, setOptions] = useState<DraftOption[]>(() =>
     item
       ? item.options.map((o) => ({
@@ -120,6 +125,21 @@ export function MenuItemEditor({
     setSaving(true);
 
     const supabase = createClient();
+
+    // The new image goes up first so its URL can be part of the same row
+    // write; the old one is only deleted after that write succeeds, so a
+    // failed save never leaves the item pointing at a deleted image.
+    let uploadedUrl: string | null = null;
+    if (imageChange.kind === "replace") {
+      const uploaded = await uploadRestaurantImage(supabase, restaurantId, imageChange.blob);
+      if ("error" in uploaded) {
+        setSaving(false);
+        setError(uploaded.error);
+        return;
+      }
+      uploadedUrl = uploaded.url;
+    }
+
     const itemPayload = {
       restaurant_id: restaurantId,
       category_id: categoryId || null,
@@ -127,6 +147,9 @@ export function MenuItemEditor({
       description: description.trim() || null,
       price: Number(price),
       is_available: isAvailable,
+      // Left out entirely when unchanged, so an edit never touches the column.
+      ...(imageChange.kind === "replace" ? { image_url: uploadedUrl } : {}),
+      ...(imageChange.kind === "remove" ? { image_url: null } : {}),
     };
 
     const { data: savedItem, error: itemError } = item
@@ -138,10 +161,13 @@ export function MenuItemEditor({
           .single();
 
     if (itemError || !savedItem) {
+      await removeStoredImage(supabase, uploadedUrl);
       setSaving(false);
       setError(SAVE_ERROR);
       return;
     }
+
+    if (imageChange.kind !== "unchanged") await removeStoredImage(supabase, item?.image_url);
 
     const itemId = savedItem.id;
 
@@ -230,6 +256,17 @@ export function MenuItemEditor({
           className={INPUT_CLASSES}
         />
       </div>
+
+      <ImagePicker
+        label="Slika"
+        currentUrl={item?.image_url ?? null}
+        value={imageChange}
+        onChange={setImageChange}
+        maxDimension={MENU_ITEM_IMAGE_MAX_DIMENSION}
+        disabled={saving}
+        previewClassName="size-20 shrink-0 rounded-md object-cover"
+        renderImage={(imageUrl, className) => <MenuItemImage imageUrl={imageUrl} alt="Slika stavke" className={className} />}
+      />
 
       <div className="flex gap-3">
         <div className="flex-1 space-y-1">

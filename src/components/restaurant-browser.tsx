@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { RestaurantImage } from "@/components/restaurant-image";
 
-type Restaurant = { id: string; name: string };
+type Restaurant = { id: string; name: string; image_url: string | null };
 
 export function RestaurantBrowser({ restaurants }: { restaurants: Restaurant[] }) {
   const [query, setQuery] = useState("");
@@ -35,9 +36,10 @@ export function RestaurantBrowser({ restaurants }: { restaurants: Restaurant[] }
             <li key={restaurant.id}>
               <Link
                 href={`/customer/restaurants/${restaurant.id}`}
-                className="block rounded-lg border border-stone-200 bg-white px-4 py-3 hover:border-accent dark:border-stone-700 dark:bg-stone-800"
+                className="block overflow-hidden rounded-lg border border-stone-200 bg-white hover:border-accent dark:border-stone-700 dark:bg-stone-800"
               >
-                {restaurant.name}
+                <RestaurantImage imageUrl={restaurant.image_url} alt="" className="aspect-video w-full object-cover" />
+                <span className="block px-4 py-3">{restaurant.name}</span>
               </Link>
             </li>
           ))}

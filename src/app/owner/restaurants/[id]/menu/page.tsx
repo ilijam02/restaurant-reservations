@@ -33,7 +33,7 @@ export default async function OwnerRestaurantMenuPage({ params }: { params: Prom
   const { data: items } = await supabase
     .from("menu_items")
     .select(
-      "id, category_id, name, description, price, is_available, display_order, options:menu_item_options(id, name, is_required, allow_multiple, display_order, choices:menu_item_option_choices(id, name, price_delta, display_order))",
+      "id, category_id, name, description, price, image_url, is_available, display_order, options:menu_item_options(id, name, is_required, allow_multiple, display_order, choices:menu_item_option_choices(id, name, price_delta, display_order))",
     )
     .eq("restaurant_id", id)
     .order("display_order");
