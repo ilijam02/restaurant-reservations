@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CartSummary, type CartItem } from "@/components/cart-summary";
 import { createClient } from "@/lib/supabase/client";
@@ -19,6 +19,10 @@ const CANCELLABLE_STATUSES: ReservationStatus[] = ["confirmed", "preparing_order
 
 export type ReservationRow = {
   id: string;
+  customer_id: string;
+  // Set by cancel_reservation() (see 20260919110000_cancel_reservation_audit.sql);
+  // null on anything not cancelled, and on cancellations from before it existed.
+  cancelled_by: string | null;
   party_size: number;
   starts_at: string;
   ends_at: string;
@@ -127,6 +131,129 @@ function seatingLabel(reservation: ReservationRow) {
   return null;
 }
 
+// The grey note on a cancelled card saying who cancelled, worded from the
+// viewer's side. `cancelled_by = customer_id` means the customer cancelled,
+// anything else is the restaurant's owner - so this needs no idea of who is
+// currently signed in, only which list it's rendering. A null cancelled_by
+// (cancelled before the column existed) gets the neutral wording.
+function cancellationNote(reservation: ReservationRow, perspective: ReservationsPerspective) {
+  if (reservation.status !== "cancelled") return null;
+  if (!reservation.cancelled_by) return "Rezervacija je otkazana";
+
+  const cancelledByCustomer = reservation.cancelled_by === reservation.customer_id;
+  if (perspective === "customer") {
+    return cancelledByCustomer ? "Otkazali ste rezervaciju" : "Rezervacija je otkazana";
+  }
+  return cancelledByCustomer ? "Gost je otkazao rezervaciju" : "Otkazali ste rezervaciju";
+}
+
+// Shown in the cancel confirmation when the kitchen has already started on
+// (or finished) the order. The actual refund - or lack of one - isn't
+// implemented yet (payment is still a placeholder, see ISSUES.md); this only
+// tells the user up front what the policy will be.
+function noRefundWarning(status: ReservationStatus) {
+  if (status === "preparing_order") return "Upozorenje: porudžbina se već priprema - novac za nju neće biti vraćen.";
+  if (status === "order_prepared") return "Upozorenje: porudžbina je već spremna - novac za nju neće biti vraćen.";
+  return null;
+}
+
+// A real modal: focus moves into it (onto the safe "Ne, zadrži" choice),
+// Tab stays inside it, Escape closes it, and focus goes back to whatever
+// opened it afterwards. The list behind it is made inert by the caller.
+function CancelDialog({
+  description,
+  warning,
+  onConfirm,
+  onClose,
+}: {
+  description: string;
+  warning: string | null;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const keepButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  const descriptionId = useId();
+  // Captured at first render (the dialog only ever mounts in response to a
+  // click), not inside the effect: React's dev-mode double-invoked effects
+  // would otherwise re-read the activeElement after the first cleanup.
+  const [opener] = useState(() => document.activeElement as HTMLElement | null);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    keepButtonRef.current?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button:not([disabled])"));
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!dialogRef.current.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      opener?.focus();
+    };
+  }, [opener]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4">
+      <div
+        ref={dialogRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-label="Potvrda otkazivanja rezervacije"
+        aria-describedby={descriptionId}
+        className="w-full max-w-sm space-y-4 rounded-lg border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-700 dark:bg-stone-800"
+      >
+        <div id={descriptionId} className="space-y-2">
+          <p>{description}</p>
+          {warning && <p className="text-sm font-medium text-amber-700 dark:text-warning">{warning}</p>}
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
+          >
+            Da, otkaži
+          </button>
+          <button
+            ref={keepButtonRef}
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-md border border-stone-300 px-3 py-2 text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:border-stone-600 dark:hover:bg-stone-700"
+          >
+            Ne, zadrži
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReservationCard({
   reservation,
   perspective,
@@ -145,7 +272,7 @@ function ReservationCard({
   const [expanded, setExpanded] = useState(false);
   const order = reservation.orders[0];
   const hasOrder = !!order && order.items.length > 0;
-  const orderCancelled = order?.status === "cancelled";
+  const cancelledNote = cancellationNote(reservation, perspective);
   const seating = seatingLabel(reservation);
 
   return (
@@ -167,7 +294,7 @@ function ReservationCard({
         </span>
       </div>
 
-      {(hasOrder || cancellable) && (
+      {(hasOrder || cancellable || cancelledNote) && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {hasOrder && (
             <button
@@ -179,9 +306,7 @@ function ReservationCard({
               {expanded ? "Sakrij porudžbinu" : "Prikaži porudžbinu"}
             </button>
           )}
-          {hasOrder && orderCancelled && (
-            <span className="text-sm text-stone-600 dark:text-stone-400">Porudžbina je otkazana</span>
-          )}
+          {cancelledNote && <span className="text-sm text-stone-600 dark:text-stone-400">{cancelledNote}</span>}
           {cancellable && (
             <button
               type="button"
@@ -240,10 +365,15 @@ export function ReservationsList({
 
     setCancellingId(null);
     if (error) {
-      setErrors((previous) => ({ ...previous, [reservationId]: error.message }));
-      return;
+      // The RPC's own messages (raised with the default P0001) are already
+      // user-facing Serbian; anything else (network, permission) isn't.
+      const message = error.code === "P0001" ? error.message : "Otkazivanje nije uspelo. Pokušajte ponovo.";
+      setErrors((previous) => ({ ...previous, [reservationId]: message }));
     }
 
+    // Refresh on failure too: the usual reason is that the reservation
+    // changed under this (stale) page - already cancelled, started, expired -
+    // and the card should catch up rather than keep offering the button.
     router.refresh();
   }
 
@@ -282,7 +412,7 @@ export function ReservationsList({
 
   return (
     <>
-      <div className="w-full max-w-lg space-y-8">
+      <div className="w-full max-w-lg space-y-8" inert={pendingCancel !== null}>
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Trenutne rezervacije</h2>
           {current.length === 0 ? (
@@ -303,38 +433,18 @@ export function ReservationsList({
       </div>
 
       {pendingCancel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 dark:bg-black/60">
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-label="Potvrda otkazivanja rezervacije"
-            className="w-full max-w-sm space-y-4 rounded-lg border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-700 dark:bg-stone-800"
-          >
-            <p>
-              {perspective === "owner"
-                ? `Otkazati rezervaciju gosta ${pendingCancel.customer_name ?? "Nepoznat korisnik"} za ${formatDateTime(pendingCancel.starts_at)}?`
-                : `Otkazati rezervaciju u restoranu ${pendingCancel.restaurants?.name ?? "Restoran"} za ${formatDateTime(pendingCancel.starts_at)}?`}
-              {pendingCancel.orders.length > 0 && " Porudžbina će biti otkazana zajedno sa rezervacijom."} To se ne može
-              poništiti.
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={confirmCancel}
-                className="flex-1 rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
-              >
-                Da, otkaži
-              </button>
-              <button
-                type="button"
-                onClick={() => setPendingCancel(null)}
-                className="flex-1 rounded-md border border-stone-300 px-3 py-2 text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:border-stone-600 dark:hover:bg-stone-700"
-              >
-                Ne, zadrži
-              </button>
-            </div>
-          </div>
-        </div>
+        <CancelDialog
+          description={
+            (perspective === "owner"
+              ? `Otkazati rezervaciju gosta ${pendingCancel.customer_name ?? "Nepoznat korisnik"} za ${formatDateTime(pendingCancel.starts_at)}?`
+              : `Otkazati rezervaciju u restoranu ${pendingCancel.restaurants?.name ?? "Restoran"} za ${formatDateTime(pendingCancel.starts_at)}?`) +
+            (pendingCancel.orders.length > 0 ? " Porudžbina će biti otkazana zajedno sa rezervacijom." : "") +
+            " To se ne može poništiti."
+          }
+          warning={noRefundWarning(pendingCancel.status)}
+          onConfirm={confirmCancel}
+          onClose={() => setPendingCancel(null)}
+        />
       )}
     </>
   );

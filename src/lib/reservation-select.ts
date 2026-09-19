@@ -6,4 +6,4 @@
 // reservation by cancel_reservation()), so at most one per reservation in
 // practice even though the FK itself isn't unique.
 export const RESERVATION_LIST_SELECT =
-  "id, customer_id, party_size, starts_at, ends_at, status, restaurants(name), reservation_tables(tables(name)), reservation_sections(party_size, sections(name)), orders(status, items:order_items(id, item_name, unit_price, quantity, choices:order_item_choices(option_name, choice_name, price_delta)))";
+  "id, customer_id, cancelled_by, party_size, starts_at, ends_at, status, restaurants(name), reservation_tables(tables(name)), reservation_sections(party_size, sections(name)), orders(status, items:order_items(id, item_name, unit_price, quantity, choices:order_item_choices(option_name, choice_name, price_delta)))";

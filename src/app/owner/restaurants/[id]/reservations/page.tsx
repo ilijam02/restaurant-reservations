@@ -23,7 +23,7 @@ export default async function OwnerRestaurantReservationsPage({ params }: { para
     notFound();
   }
 
-  const reservations = await fetchOwnerReservations(supabase, id);
+  const { reservations, error } = await fetchOwnerReservations(supabase, id);
 
   // Computed once here rather than inside the client list component - see
   // ReservationsList's own comment on `now`.
@@ -33,7 +33,13 @@ export default async function OwnerRestaurantReservationsPage({ params }: { para
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref="/owner" menuItems={OWNER_MENU_ITEMS} />
       <h1 className="text-3xl font-bold">{restaurant.name}</h1>
-      <ReservationsList reservations={reservations} now={now} perspective="owner" />
+      {error ? (
+        <p role="alert" className="text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      ) : (
+        <ReservationsList reservations={reservations} now={now} perspective="owner" />
+      )}
     </main>
   );
 }

@@ -1,4 +1,7 @@
--- Coverage for supabase/migrations/20260919100000_cancel_reservation.sql:
+-- Coverage for supabase/migrations/20260919100000_cancel_reservation.sql and
+-- 20260919110000_cancel_reservation_audit.sql (cancelled_at/cancelled_by,
+-- and update_reservation_status() saying "cancelled" instead of a misleading
+-- transition error on a cancelled reservation):
 -- cancel_reservation() - who may call it (the booking customer and the
 -- restaurant's owner, nobody else, no anon), which statuses it accepts
 -- (confirmed / preparing_order / order_prepared only, and never an
@@ -29,7 +32,7 @@
 -- Times are relative to now() and "already started/expired" is simulated
 -- with a service_role backdate, same as 80-reservation-status-lifecycle.sql.
 begin;
-select plan(35);
+select plan(46);
 
 select tests.create_supabase_user('owner_f', 'ownerf@test.com', null,
   '{"first_name":"Owner","last_name":"F","phone":"555-0021","role":"owner"}'::jsonb);
@@ -69,6 +72,14 @@ insert into public.tables (restaurant_id, layout_id, name, seats, x, y, width, h
   );
 insert into public.menu_items (restaurant_id, name, price, is_available)
   values ((select id from public.restaurants where name = 'Cancel Café'), 'Pica C', 500, true);
+
+-- A second restaurant in plain-capacity mode (no layout, no sections): 4
+-- seats, 24/7, used only for the "cancelling frees capacity" check.
+insert into public.restaurants (owner_id, name, capacity)
+  values (tests.get_supabase_uid('owner_f'), 'Cancel Kapacitet', 4);
+insert into public.restaurant_hours (restaurant_id, day_of_week, start_minute, end_minute)
+  select (select id from public.restaurants where name = 'Cancel Kapacitet'), d, 0, 1440
+  from generate_series(0, 6) as d;
 
 select tests.authenticate_as_service_role();
 insert into public.restaurant_staff (restaurant_id, employee_id, status)
@@ -267,6 +278,12 @@ select results_eq(
   'A is now cancelled'
 );
 
+select ok(
+  (select cancelled_by = tests.get_supabase_uid('customer_5') and cancelled_at = now()
+   from public.reservations where id = current_setting('tests.a_id')::uuid),
+  'A records who cancelled it (customer_5) and when'
+);
+
 select tests.authenticate_as_service_role();
 select ok(
   (select bool_and(starts_at = ends_at and ends_at <= now())
@@ -326,11 +343,44 @@ select is(
   'owner_f can still read the items of B''s cancelled order'
 );
 
+select ok(
+  (select cancelled_by = tests.get_supabase_uid('owner_f') and cancelled_at = now()
+   from public.reservations where id = current_setting('tests.b_id')::uuid),
+  'B records who cancelled it (owner_f, not the customer) and when'
+);
+
+select tests.authenticate_as('employee_4');
+select throws_ok(
+  $$select public.update_reservation_status(current_setting('tests.b_id')::uuid, 'order_prepared')$$,
+  'P0001',
+  'Rezervacija je otkazana.',
+  'staff acting on a stale card get told the reservation was cancelled, not a misleading transition error'
+);
+
 select tests.authenticate_as('owner_g');
 select is(
   (select count(*) from public.orders where status = 'cancelled'),
   0::bigint,
   'owner_g cannot see cancelled orders at a restaurant they do not own'
+);
+
+select is(
+  (select count(*) from public.order_items),
+  0::bigint,
+  'owner_g cannot see the items of a cancelled order at a restaurant they do not own either'
+);
+
+select tests.authenticate_as('employee_4');
+select is(
+  (select count(*) from public.orders where status = 'cancelled'),
+  0::bigint,
+  'employee_4 (accepted staff) cannot see cancelled orders - only owners got that read access'
+);
+
+select is(
+  (select count(*) from public.order_items),
+  0::bigint,
+  'employee_4 cannot see the items of a cancelled order either'
 );
 
 select tests.authenticate_as('customer_5');
@@ -351,6 +401,56 @@ select results_eq(
   $$select status from public.reservations where id = current_setting('tests.g_id')::uuid$$,
   $$values ('cancelled'::text)$$,
   'G is now cancelled'
+);
+
+-- === The table-based cancels above are now visible to the availability preview ===
+select is(
+  (select array_agg(t.name order by t.name)
+   from public.get_occupied_table_ids(
+     (select id from public.restaurants where name = 'Cancel Café'),
+     now() + interval '2 hours',
+     now() + interval '3 hours'
+   ) o join public.tables t on t.id = o.table_id),
+  array['Sto C1']::text[],
+  'get_occupied_table_ids reports only Sto C1 (customer_6''s rebooking of A''s slot) as taken in that window - B''s Sto C2 and G''s Sto C3 are free again'
+);
+
+-- === Plain-capacity restaurant (no layout, no sections): cancelling frees
+-- === capacity, not just table slots ===
+select lives_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'Cancel Kapacitet'),
+      4, (now() + interval '2 hours'), 60
+    )$$,
+  'customer_5 books a party of 4 at Cancel Kapacitet (capacity 4, no layout or sections) - the restaurant is now full for that slot'
+);
+
+select tests.authenticate_as('customer_6');
+select throws_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'Cancel Kapacitet'),
+      1, (now() + interval '2 hours'), 60
+    )$$,
+  'P0001',
+  'Nema dovoljno slobodnih mesta u izabrano vreme (slobodno mesta: 0).',
+  'customer_6 cannot book even one more seat in that slot while the party of 4 is confirmed'
+);
+
+select tests.authenticate_as('customer_5');
+select lives_ok(
+  $$select public.cancel_reservation(
+      (select id from public.reservations where restaurant_id = (select id from public.restaurants where name = 'Cancel Kapacitet'))
+    )$$,
+  'customer_5 cancels the party of 4 at Cancel Kapacitet'
+);
+
+select tests.authenticate_as('customer_6');
+select lives_ok(
+  $$select public.create_reservation(
+      (select id from public.restaurants where name = 'Cancel Kapacitet'),
+      1, (now() + interval '2 hours'), 60
+    )$$,
+  'customer_6 can now book that slot - cancelling freed the plain capacity too'
 );
 
 -- === Owner-side read access to customer profiles ===
