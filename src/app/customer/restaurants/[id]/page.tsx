@@ -52,9 +52,9 @@ export default async function CustomerRestaurantPage({
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref="/customer" />
-      <h1 className="text-3xl font-bold">{restaurant.name}</h1>
+      {/* Top-left corner of the content, lined up with the menu's left edge. */}
       {(restaurant.address || restaurant.latitude !== null) && (
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-2 self-center">
           {restaurant.address && <p className="text-stone-600 dark:text-stone-400">{restaurant.address}</p>}
           {/* Longitude is always set together with latitude (DB constraint). */}
           {restaurant.latitude !== null && (
@@ -67,6 +67,7 @@ export default async function CustomerRestaurantPage({
           )}
         </div>
       )}
+      <h1 className="text-3xl font-bold">{restaurant.name}</h1>
       <MenuBrowser
         restaurantId={id}
         categories={categories ?? []}

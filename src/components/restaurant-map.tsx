@@ -119,8 +119,10 @@ export function RestaurantMap({ restaurants, focusId }: { restaurants: MapRestau
     if (!marker.getPopup()?.isOpen()) marker.togglePopup();
   }, [mapInstance, focused, restaurants]);
 
+  // 20% wider and 10% taller than the original max-w-5xl (1024px) and
+  // viewport-minus-10rem box.
   return (
-    <div className="w-full max-w-5xl space-y-3">
+    <div className="w-full max-w-[1229px] space-y-3">
       {restaurants.length === 0 && (
         <p className="text-stone-600 dark:text-stone-400">Nijedan restoran još nije postavio lokaciju na mapi.</p>
       )}
@@ -128,7 +130,7 @@ export function RestaurantMap({ restaurants, focusId }: { restaurants: MapRestau
         ref={containerRef}
         role="application"
         aria-label="Mapa restorana"
-        className="h-[calc(100dvh-10rem)] min-h-80 w-full overflow-hidden rounded-lg border border-stone-200 dark:border-stone-700"
+        className="h-[calc((100dvh-10rem)*1.1)] min-h-88 w-full overflow-hidden rounded-lg border border-stone-200 dark:border-stone-700"
       />
     </div>
   );
