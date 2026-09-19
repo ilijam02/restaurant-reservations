@@ -69,15 +69,18 @@ function seatingLabel(reservation: EmployeeReservationRow) {
   return null;
 }
 
+type StatusAction = { status: ReservationStatus; label: string; undo?: boolean };
+
 // Mirrors update_reservation_status()'s own transition graph (see
-// 20260917140000_reservation_status_lifecycle.sql) - kept here only to
-// decide which buttons to show, the RPC remains the actual authority and
+// 20260917140000_reservation_status_lifecycle.sql and, for the two `undo`
+// steps back, 20260919170000_reservation_status_undo.sql) - kept here only
+// to decide which buttons to show, the RPC remains the actual authority and
 // re-validates everything server-side regardless of what this renders.
 function nextActions(
   reservation: EmployeeReservationRow,
   hasStarted: boolean,
   canMarkOngoing: boolean,
-): { status: ReservationStatus; label: string }[] {
+): StatusAction[] {
   const hasOrder = reservation.orders.length > 0;
   const ongoingAction = canMarkOngoing ? [{ status: "ongoing" as const, label: "Označi kao u toku" }] : [];
   const noShowAction = hasStarted ? [{ status: "no_show" as const, label: "Gost se nije pojavio/la" }] : [];
@@ -89,14 +92,71 @@ function nextActions(
         ...noShowAction,
       ];
     case "preparing_order":
-      return [{ status: "order_prepared", label: "Porudžbina je spremna" }];
+      return [
+        { status: "order_prepared", label: "Porudžbina je spremna" },
+        { status: "confirmed", label: "Vrati na potvrđenu", undo: true },
+      ];
     case "order_prepared":
-      return [...ongoingAction, ...noShowAction];
+      return [
+        ...ongoingAction,
+        ...noShowAction,
+        { status: "preparing_order", label: "Vrati na pripremu porudžbine", undo: true },
+      ];
     case "ongoing":
       return [{ status: "completed", label: "Završi rezervaciju" }];
     default:
       return [];
   }
+}
+
+type Confirmation = { label: string; message: string };
+
+// The transitions that can't be stepped back from (there is no undo for
+// ongoing/completed/no_show - they rewrite starts_at/ends_at) ask first.
+// Cancelling isn't an employee action (see cancel_reservation()); its own
+// dialog lives in reservations-list.tsx.
+function confirmationFor(
+  reservation: EmployeeReservationRow,
+  newStatus: ReservationStatus,
+  now: Date,
+): Confirmation | null {
+  switch (newStatus) {
+    case "ongoing":
+      // Starting before the booked time rewrites the start time.
+      if (new Date(reservation.starts_at).getTime() > now.getTime()) {
+        return {
+          label: "Potvrda ranijeg početka",
+          message: `Rezervacija je zakazana za ${formatDateTime(reservation.starts_at)}. Ako je sada označite kao u toku, njen početak se pomera na trenutno vreme i to se ne može poništiti. Nastaviti?`,
+        };
+      }
+      return {
+        label: "Potvrda početka rezervacije",
+        message: "Označiti rezervaciju kao u toku? Ovo se ne može poništiti.",
+      };
+    case "completed":
+      return {
+        label: "Potvrda završetka rezervacije",
+        message: "Završiti rezervaciju? Ovo se ne može poništiti.",
+      };
+    case "no_show":
+      return {
+        label: "Potvrda izostanka gosta",
+        message: "Označiti da se gost nije pojavio/la? Ovo se ne može poništiti.",
+      };
+    default:
+      return null;
+  }
+}
+
+const PRIMARY_BUTTON_CLASSES =
+  "rounded-md bg-accent px-3 py-1 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800";
+const NEUTRAL_BUTTON_CLASSES =
+  "rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:border-stone-600 dark:hover:bg-stone-700";
+
+function actionButtonClasses(action: StatusAction) {
+  if (action.undo) return NEUTRAL_BUTTON_CLASSES;
+  if (action.status === "no_show") return `${NEUTRAL_BUTTON_CLASSES} text-danger`;
+  return PRIMARY_BUTTON_CLASSES;
 }
 
 // Mirrors update_reservation_status()'s early-start window (see
@@ -149,11 +209,7 @@ function ReservationCard({
               type="button"
               disabled={pending}
               onClick={() => onTransition(reservation, action.status)}
-              className={
-                action.status === "no_show"
-                  ? "rounded-md border border-stone-300 px-3 py-1 text-sm text-danger hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-600 dark:hover:bg-stone-700"
-                  : "rounded-md bg-accent px-3 py-1 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
-              }
+              className={actionButtonClasses(action)}
             >
               {pending ? "Sačuvavanje..." : action.label}
             </button>
@@ -184,7 +240,9 @@ export function EmployeeRestaurantReservationsList({ reservations, now }: { rese
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [pendingEarlyStart, setPendingEarlyStart] = useState<EmployeeReservationRow | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<
+    (Confirmation & { reservationId: string; newStatus: ReservationStatus }) | null
+  >(null);
 
   async function handleTransition(reservationId: string, newStatus: ReservationStatus) {
     setErrors((previous) => ({ ...previous, [reservationId]: "" }));
@@ -212,21 +270,22 @@ export function EmployeeRestaurantReservationsList({ reservations, now }: { rese
   const nowDate = new Date(now);
   const sorted = [...reservations].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
 
-  // Starting a reservation before its booked time rewrites its start time
-  // and can't be undone, so that one transition asks first.
+  // Transitions that can't be undone ask first; the step-backs go straight
+  // through (see confirmationFor()).
   function requestTransition(reservation: EmployeeReservationRow, newStatus: ReservationStatus) {
-    if (newStatus === "ongoing" && new Date(reservation.starts_at).getTime() > nowDate.getTime()) {
-      setPendingEarlyStart(reservation);
+    const confirmation = confirmationFor(reservation, newStatus, nowDate);
+    if (confirmation) {
+      setPendingConfirmation({ ...confirmation, reservationId: reservation.id, newStatus });
       return;
     }
     handleTransition(reservation.id, newStatus);
   }
 
-  function confirmEarlyStart() {
-    if (!pendingEarlyStart) return;
-    const reservationId = pendingEarlyStart.id;
-    setPendingEarlyStart(null);
-    handleTransition(reservationId, "ongoing");
+  function confirmPendingTransition() {
+    if (!pendingConfirmation) return;
+    const { reservationId, newStatus } = pendingConfirmation;
+    setPendingConfirmation(null);
+    handleTransition(reservationId, newStatus);
   }
 
   return (
@@ -244,29 +303,26 @@ export function EmployeeRestaurantReservationsList({ reservations, now }: { rese
         ))}
       </ul>
 
-      {pendingEarlyStart && (
+      {pendingConfirmation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 dark:bg-black/60">
           <div
             role="alertdialog"
             aria-modal="true"
-            aria-label="Potvrda ranijeg početka"
+            aria-label={pendingConfirmation.label}
             className="w-full max-w-sm space-y-4 rounded-lg border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-700 dark:bg-stone-800"
           >
-            <p>
-              Rezervacija je zakazana za {formatDateTime(pendingEarlyStart.starts_at)}. Ako je sada označite kao u toku,
-              njen početak se pomera na trenutno vreme i to se ne može poništiti. Nastaviti?
-            </p>
+            <p>{pendingConfirmation.message}</p>
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={confirmEarlyStart}
+                onClick={confirmPendingTransition}
                 className="flex-1 rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
               >
                 Nastavi
               </button>
               <button
                 type="button"
-                onClick={() => setPendingEarlyStart(null)}
+                onClick={() => setPendingConfirmation(null)}
                 className="flex-1 rounded-md border border-stone-300 px-3 py-2 text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:border-stone-600 dark:hover:bg-stone-700"
               >
                 Otkaži
