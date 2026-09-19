@@ -4,7 +4,7 @@
 -- test: before that migration, a table-wide `update` grant let any signed-in
 -- user promote themselves to any role.
 begin;
-select plan(5);
+select plan(8);
 
 select tests.create_supabase_user('customer_a', 'customera@test.com', null,
   '{"first_name":"Cust","last_name":"A","phone":"555-0101","role":"customer"}'::jsonb);
@@ -20,25 +20,48 @@ select throws_ok(
   'a user cannot change their own role'
 );
 
--- The rejected update above must not have changed anything.
-select results_eq(
-  $$select role from public.profiles where id = tests.get_supabase_uid('customer_a')$$,
-  ARRAY['customer'::text],
-  'the role is still customer after the rejected update'
-);
-
--- ...and so a self-promoted "owner" still can't create a restaurant.
+-- The realistic attack: smuggle the role change in alongside an allowed field.
+-- The whole statement must be rejected, not just the role part.
 select throws_ok(
-  $$insert into public.restaurants (owner_id, name) values (tests.get_supabase_uid('customer_a'), 'Sneaky')$$,
+  $$update public.profiles set first_name = 'Sneaky', role = 'owner'
+    where id = tests.get_supabase_uid('customer_a')$$,
   '42501',
   null,
-  'a customer account cannot create a restaurant'
+  'a mixed update that includes role is rejected'
 );
 
--- The fields that are the user's own to edit still work.
-select lives_ok(
-  $$update public.profiles set first_name = 'Renamed' where id = tests.get_supabase_uid('customer_a')$$,
-  'a user can still update their own first name'
+-- Neither rejected update may have changed anything.
+select results_eq(
+  $$select first_name, role from public.profiles where id = tests.get_supabase_uid('customer_a')$$,
+  $$values ('Cust'::text, 'customer'::text)$$,
+  'first_name and role are unchanged after the rejected updates'
+);
+
+-- Column privileges, checked directly: nothing but the three editable fields.
+select ok(
+  not has_column_privilege('authenticated', 'public.profiles', 'role', 'UPDATE'),
+  'authenticated has no UPDATE privilege on profiles.role'
+);
+
+select ok(
+  not has_column_privilege('authenticated', 'public.profiles', 'id', 'UPDATE')
+    and not has_column_privilege('authenticated', 'public.profiles', 'created_at', 'UPDATE'),
+  'authenticated has no UPDATE privilege on profiles.id or profiles.created_at'
+);
+
+-- The fields that are the user's own to edit still work - and actually change
+-- the row (a policy silently matching nothing would also "succeed").
+select results_eq(
+  $$update public.profiles set first_name = 'Renamed'
+    where id = tests.get_supabase_uid('customer_a') returning 1$$,
+  ARRAY[1],
+  'a user can update their own first name'
+);
+
+select results_eq(
+  $$select first_name from public.profiles where id = tests.get_supabase_uid('customer_a')$$,
+  ARRAY['Renamed'::text],
+  'the first name change was actually saved'
 );
 
 -- Another user's profile stays out of reach (own-row policy, unchanged).

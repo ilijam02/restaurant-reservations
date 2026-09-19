@@ -12,9 +12,14 @@ const ROLES: readonly string[] = ["customer", "employee", "owner"];
 //
 // Returns null when there's no profile row or the query fails, so callers
 // fail closed (treated as signed-out) rather than falling back to a weaker
-// source.
+// source. A failed query is logged: otherwise a grant/RLS regression on
+// `profiles` would make every user look signed out with nothing to go on.
 export async function getProfileRole(supabase: SupabaseClient, userId: string): Promise<Role | null> {
-  const { data } = await supabase.from("profiles").select("role").eq("id", userId).maybeSingle();
+  const { data, error } = await supabase.from("profiles").select("role").eq("id", userId).maybeSingle();
+  if (error) {
+    console.error("getProfileRole: profiles lookup failed", error.message);
+    return null;
+  }
   const role = data?.role;
   return typeof role === "string" && ROLES.includes(role) ? (role as Role) : null;
 }
