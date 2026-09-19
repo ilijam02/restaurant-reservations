@@ -29,12 +29,11 @@ Authentication (login, signup, role-based home pages) is implemented — see "Im
 - **Authorization:** Postgres Row-Level Security (RLS) policies keyed off a role claim (customer/employee/owner), rather than app-level permission checks — this also gates Realtime subscriptions automatically.
 - **Database integrity:** a Postgres exclusion constraint on table/time-range prevents double-booking at the DB level.
 - **Payments:** Stripe.
-- **Maps:** not yet decided — Mapbox vs. Google Places is still open.
+- **Maps:** [MapLibre GL JS](https://maplibre.org) (pinned to v5 — v6's separate worker file breaks under Turbopack) rendering [OpenFreeMap](https://openfreemap.org) tiles, with address lookup via the public Nominatim (OpenStreetMap) geocoder — all free, no API keys. Nominatim is only for explicit owner clicks, never autocomplete or bulk (see `src/lib/geocode.ts` and the "Maps" entry in `ISSUES.md`).
 - **Future ML recommendations:** deferred, but the schema should accommodate `pgvector` for embedding-based similarity/ranking when built.
 
 Not yet decided:
 
-- Maps provider (Mapbox vs. Google Places)
 - Monorepo/build tooling beyond plain npm (not needed yet at this scale)
 
 **Implemented features:**

@@ -46,6 +46,8 @@ One row per `auth.users` row — the signup fields Supabase Auth doesn't store i
 | `capacity` | integer, nullable | plain manual cap; `null` = unlimited. **Only meaningful/written when the restaurant has no sections and no active layout** — once either exists, effective capacity is computed live from them instead (app logic, see `src/lib/capacity-cascade.ts`) and this column is left stale on purpose. |
 | `default_stay_minutes` | integer, not null, default 90 | constrained to 30–180, matching `create_reservation()`'s own duration cap |
 | `image_url` | text, nullable | full public URL of the restaurant's cover image in the `restaurant-images` bucket (see Storage below); when null, `RestaurantImage` renders an inline SVG placeholder client-side |
+| `address` | text, nullable | owner's free-text address; never blank (check constraint) — independent of the pin, editing one doesn't rewrite the other |
+| `latitude`, `longitude` | double precision, nullable | the map pin, set/cleared together (check constraint) and range-checked (±90 / ±180); `null` = not shown on the map. Plain numbers, no PostGIS — see [restaurant_location.sql](supabase/migrations/20260919150000_restaurant_location.sql) |
 | `created_at` | timestamptz | |
 
 **RLS:** select is open to any authenticated user (any role — needed so customers/employees can browse). Insert is restricted to accounts with `profiles.role = 'owner'`. Update/delete restricted to the owning `owner_id`.
@@ -62,6 +64,14 @@ One row per open interval (not per day) — a day can have multiple rows (split 
 **RLS:** select open to all authenticated users; insert/update/delete restricted to the restaurant's owner.
 
 > This table went through two schema revisions (`open_time`/`close_time` + `is_24h`/`closes_next_day` flags → plain `start_minute`/`end_minute` intervals) before landing here — a good example of "the migrations are history, this doc is the destination."
+
+### `geocode_rate_limit`
+A single row that throttles the app's use of the public Nominatim geocoder (which allows 1 request/second per client) — the whole app is one client, so the limit is global, not per user. Not reachable directly: RLS is on with no policies and no grants; it's only touched by `claim_geocode_slot()` (see Functions).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | boolean PK, default `true`, check `id` | forces exactly one row |
+| `last_call_at` | timestamptz, default `-infinity` | when a geocoding request last claimed the slot |
 
 ---
 
@@ -252,6 +262,7 @@ Postgres functions the frontend calls directly via `supabase.rpc(name, args)`, r
 | `tables_with_active_reservations(p_table_ids)` | [detailed_active_reservation_errors.sql](supabase/migrations/20260917100000_detailed_active_reservation_errors.sql), extended with a `layout_name` column in [tables_with_active_reservations_layout_name.sql](supabase/migrations/20260917110000_tables_with_active_reservations_layout_name.sql), scoped to the caller's own restaurants in [scope_capacity_functions_to_owner.sql](supabase/migrations/20260917130000_scope_capacity_functions_to_owner.sql), widened in [reservation_status_lifecycle.sql](supabase/migrations/20260917140000_reservation_status_lifecycle.sql) | [edit-restaurant-form.tsx](src/components/edit-restaurant-form.tsx), in `handleSubmit`'s pre-check before any delete is attempted | Given a set of table ids, report each one owned by the caller that still has an active reservation (name, its layout's name, earliest reservation's date/time + party size), so a single save can list every blocker at once (grouped by layout once more than one is involved) instead of discovering them one `.delete()` at a time |
 | `sections_with_active_reservations(p_section_ids)` | [detailed_active_reservation_errors.sql](supabase/migrations/20260917100000_detailed_active_reservation_errors.sql), scoped to the caller's own restaurants in [scope_capacity_functions_to_owner.sql](supabase/migrations/20260917130000_scope_capacity_functions_to_owner.sql), widened in [reservation_status_lifecycle.sql](supabase/migrations/20260917140000_reservation_status_lifecycle.sql) | [edit-restaurant-form.tsx](src/components/edit-restaurant-form.tsx), same pre-check | Same idea as `tables_with_active_reservations`, for sections (no layout grouping needed - section names are unique per restaurant) |
 | `sections_peak_reserved_capacity(p_section_ids)` | [sections_peak_reserved_capacity_batch.sql](supabase/migrations/20260917120000_sections_peak_reserved_capacity_batch.sql), scoped to the caller's own restaurants in [scope_capacity_functions_to_owner.sql](supabase/migrations/20260917130000_scope_capacity_functions_to_owner.sql) | [edit-restaurant-form.tsx](src/components/edit-restaurant-form.tsx), pre-checked immediately before the section rename-then-update dance (see the deletion/capacity guards callout above for why, and for the residual race this doesn't fully close) | Batched wrapper around `section_peak_reserved_capacity()` — given a set of section ids, reports each one owned by the caller with its name and current peak reserved capacity, so a save touching several sections' capacity at once can name every one that would fail instead of only the first |
+| `claim_geocode_slot()` | [geocode_rate_limit.sql](supabase/migrations/20260919160000_geocode_rate_limit.sql) | the `geocodeAddressAction` Server Action (`src/app/owner/restaurants/[id]/edit/actions.ts`) | Returns `true` and records the time if no geocoding request has claimed the app-wide slot in the last 1.1 s, `false` otherwise (one atomic `update ... where`, so concurrent callers can't both win). Owner-role accounts only — `false` for everyone else. Callable from the Data API, so a signed-in owner could hold the slot to slow other owners' searches, but never to get requests past the limit |
 
 **Worth knowing:** locking down "only quantity may change" on `order_items` took three migrations to get right — a column-level `grant update (quantity)` didn't reliably block other columns, a `with check` self-referencing subquery also rejected legitimate quantity updates, and the working fix ended up being a plain `before update` trigger comparing `OLD`/`NEW` directly. A reasonable thing to mention if a mentor asks "did everything work first try" — it didn't, and the fix is visible in the migration history.
 

@@ -1,7 +1,8 @@
 -- RLS coverage for public.restaurants (see supabase/migrations/20260831075904_create_restaurants.sql
--- and .../20260831120000_restaurants_public_select.sql for the policies under test).
+-- and .../20260831120000_restaurants_public_select.sql for the policies under test,
+-- and .../20260919150000_restaurant_location.sql for the location columns).
 begin;
-select plan(11);
+select plan(17);
 
 select tests.rls_enabled('public', 'restaurants');
 
@@ -80,6 +81,50 @@ select results_eq(
   $$update public.restaurants set name = 'A''s Bistro & Grill' where name = 'A''s Bistro' returning 1$$,
   ARRAY[1],
   'owner_a can update their own restaurant'
+);
+
+-- Location (address + coordinates for the customer map): an owner can set it
+-- on their own restaurant, the coordinates must be a complete, real pair,
+-- another owner can't move the pin, and any role can read it back.
+select tests.authenticate_as('owner_a');
+select lives_ok(
+  $$update public.restaurants set address = 'Knez Mihailova 1, Beograd', latitude = 44.8206, longitude = 20.4573 where name = 'A''s Bistro & Grill'$$,
+  'owner_a can set the location on their own restaurant'
+);
+
+select throws_ok(
+  $$update public.restaurants set latitude = 44.8, longitude = null where name = 'A''s Bistro & Grill'$$,
+  '23514',
+  null,
+  'latitude without longitude is rejected'
+);
+
+select throws_ok(
+  $$update public.restaurants set latitude = 91, longitude = 20 where name = 'A''s Bistro & Grill'$$,
+  '23514',
+  null,
+  'latitude outside -90..90 is rejected'
+);
+
+select throws_ok(
+  $$update public.restaurants set address = '   ' where name = 'A''s Bistro & Grill'$$,
+  '23514',
+  null,
+  'a blank address is rejected'
+);
+
+select tests.authenticate_as('owner_b');
+select results_eq(
+  $$update public.restaurants set latitude = 0, longitude = 0 where name = 'A''s Bistro & Grill' returning 1$$,
+  ARRAY[]::integer[],
+  'owner_b cannot move owner_a''s pin'
+);
+
+select tests.authenticate_as('customer_a');
+select results_eq(
+  $$select latitude from public.restaurants where name = 'A''s Bistro & Grill'$$,
+  ARRAY[44.8206::double precision],
+  'a customer can read a restaurant''s coordinates'
 );
 
 -- Owner B cannot delete Owner A's restaurant.

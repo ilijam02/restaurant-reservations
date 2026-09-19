@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ImagePicker, UNCHANGED_IMAGE, type ImageChange } from "@/components/image-picker";
+import { LocationPicker, type LocationPosition } from "@/components/location-picker";
 import { RestaurantImage } from "@/components/restaurant-image";
 import { RESTAURANT_IMAGE_MAX_DIMENSION, removeStoredImage, uploadRestaurantImage } from "@/lib/image-upload";
 import { RestaurantHoursCalendar, type HourBlock } from "@/components/restaurant-hours-calendar";
@@ -18,6 +19,9 @@ type Restaurant = {
   capacity: number | null;
   default_stay_minutes: number;
   image_url: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type HoursRow = {
@@ -177,6 +181,12 @@ export function EditRestaurantForm({
 }) {
   const router = useRouter();
   const [name, setName] = useState(restaurant.name);
+  const [address, setAddress] = useState(restaurant.address ?? "");
+  const [position, setPosition] = useState<LocationPosition | null>(
+    restaurant.latitude !== null && restaurant.longitude !== null
+      ? { latitude: restaurant.latitude, longitude: restaurant.longitude }
+      : null,
+  );
   // The image currently stored on the restaurant row. Kept in state (not read
   // from the prop) because it changes mid-save - see the note where it's set.
   const [imageUrl, setImageUrl] = useState(restaurant.image_url);
@@ -372,6 +382,11 @@ export function EditRestaurantForm({
       .from("restaurants")
       .update({
         name,
+        // Blank address -> null (the DB rejects blank strings), and the pin is
+        // stored as a complete pair or not at all.
+        address: address.trim() || null,
+        latitude: position?.latitude ?? null,
+        longitude: position?.longitude ?? null,
         default_stay_minutes: Number(defaultStayMinutes),
         // Left out entirely when unchanged, so a save never touches the column.
         ...(imageChange.kind === "replace" ? { image_url: uploadedUrl } : {}),
@@ -382,7 +397,11 @@ export function EditRestaurantForm({
     if (restaurantError) {
       await removeStoredImage(supabase, uploadedUrl);
       setLoading(false);
-      setError(restaurantError.code === "23514" ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
+      // 23514 is any check constraint, and restaurants now has several (the
+      // location ones too), so tell them apart by constraint name.
+      const isStayMinutesViolation =
+        restaurantError.code === "23514" && restaurantError.message.includes("restaurants_default_stay_minutes_range");
+      setError(isStayMinutesViolation ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
       return;
     }
 
@@ -723,6 +742,14 @@ export function EditRestaurantForm({
           className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
         />
       </div>
+
+      <LocationPicker
+        address={address}
+        onAddressChange={setAddress}
+        position={position}
+        onPositionChange={setPosition}
+        disabled={loading}
+      />
 
       <ImagePicker
         label="Slika restorana"

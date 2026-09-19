@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { MenuBrowser } from "@/components/menu-browser";
 import type { CartItem } from "@/components/cart-summary";
+import { mapHrefForRestaurant } from "@/lib/map";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function CustomerRestaurantPage({
@@ -12,7 +14,7 @@ export default async function CustomerRestaurantPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: restaurant } = await supabase.from("restaurants").select("id, name").eq("id", id).single();
+  const { data: restaurant } = await supabase.from("restaurants").select("id, name, address, latitude").eq("id", id).single();
 
   if (!restaurant) {
     notFound();
@@ -50,6 +52,30 @@ export default async function CustomerRestaurantPage({
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref="/customer" />
+      {/* Pinned to the top-right corner on the same line as AppHeader's back
+          button (fixed top-4, h-10). The button is styled like the header's; the
+          address is deliberately plain text (bg-background only keeps menu
+          cards from showing through it while scrolling). left-32 keeps it clear of
+          the header's own buttons; the wrapper ignores clicks so it never
+          blocks anything in the gap between the two. */}
+      {(restaurant.address || restaurant.latitude !== null) && (
+        <div className="pointer-events-none fixed top-4 right-4 left-32 z-40 flex h-10 items-center justify-end gap-2">
+          {restaurant.address && (
+            <p className="pointer-events-auto min-w-0 truncate bg-background px-1 text-stone-600 dark:text-stone-400">
+              {restaurant.address}
+            </p>
+          )}
+          {/* Longitude is always set together with latitude (DB constraint). */}
+          {restaurant.latitude !== null && (
+            <Link
+              href={mapHrefForRestaurant(restaurant.id)}
+              className="pointer-events-auto flex h-10 shrink-0 items-center rounded-md border border-stone-300 bg-white px-3 text-sm text-stone-900 hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:hover:bg-stone-700 dark:focus-visible:ring-offset-stone-900"
+            >
+              Otvori na mapi
+            </Link>
+          )}
+        </div>
+      )}
       <h1 className="text-3xl font-bold">{restaurant.name}</h1>
       <MenuBrowser
         restaurantId={id}
