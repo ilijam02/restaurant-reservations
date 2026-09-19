@@ -16,9 +16,13 @@ create table public.geocode_rate_limit (
 
 insert into public.geocode_rate_limit (id) values (true);
 
--- Reachable only through claim_geocode_slot(): RLS on with no policies, and no
--- grants (this project has "automatically expose new tables" disabled).
+-- Reachable only through claim_geocode_slot(): RLS on with no policies, and
+-- an explicit revoke. The hosted project doesn't auto-expose new tables, but a
+-- local stack (and CI) grants them to anon/authenticated by default, so the
+-- revoke keeps "permission denied" true in every environment rather than
+-- leaning on whichever defaults happen to be in force.
 alter table public.geocode_rate_limit enable row level security;
+revoke all on table public.geocode_rate_limit from public, anon, authenticated;
 
 -- Returns true when the caller may make one geocoding request now (and records
 -- that they did), false when someone else has used the slot within the last
