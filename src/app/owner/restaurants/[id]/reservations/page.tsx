@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { ReservationsList } from "@/components/reservations-list";
 import { fetchOwnerReservations } from "@/lib/owner-reservations";
-import { OWNER_MENU_ITEMS } from "@/lib/owner-nav";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function OwnerRestaurantReservationsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +30,7 @@ export default async function OwnerRestaurantReservationsPage({ params }: { para
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
-      <AppHeader backHref="/owner" menuItems={OWNER_MENU_ITEMS} />
+      <AppHeader backHref="/owner" />
       <h1 className="text-3xl font-bold">{restaurant.name}</h1>
       {error ? (
         <p role="alert" className="text-red-600 dark:text-red-400">
