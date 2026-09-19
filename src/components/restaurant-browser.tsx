@@ -18,20 +18,20 @@ export function RestaurantBrowser({ restaurants }: { restaurants: Restaurant[] }
   );
 
   return (
-    <div className="w-full max-w-sm space-y-4">
+    <div className="w-full max-w-5xl space-y-4">
       <input
         type="search"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Pretraži restorane"
         aria-label="Pretraži restorane"
-        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
+        className="w-full max-w-sm rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
       />
 
       {filtered.length === 0 ? (
         <p className="text-stone-600 dark:text-stone-400">Nema restorana koji odgovaraju pretrazi.</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
           {filtered.map((restaurant) => (
             <li key={restaurant.id}>
               <Link

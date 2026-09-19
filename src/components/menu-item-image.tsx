@@ -23,6 +23,10 @@ export function MenuItemImage({
       role="img"
       aria-label={alt}
       className={className}
+      // "slice" so the artwork fills a non-square box instead of
+      // letterboxing (the customer menu cards are square, but the owner
+      // list thumbnails and any future layout may not be).
+      preserveAspectRatio="xMidYMid slice"
     >
       <rect width="100" height="100" className="fill-stone-100 dark:fill-stone-700" />
       <circle cx="50" cy="50" r="30" className="fill-none stroke-orange-700 dark:stroke-accent" strokeWidth="2.5" />

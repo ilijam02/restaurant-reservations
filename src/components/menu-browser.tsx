@@ -222,43 +222,49 @@ export function MenuBrowser({
   const total = cartTotal(cartItems);
 
   return (
-    <div className="w-full max-w-2xl space-y-6 pb-28">
+    <div className="w-full max-w-5xl space-y-6 pb-28">
       {groups.length === 0 ? (
         <p className="text-stone-600 dark:text-stone-400">Meni trenutno nema stavki.</p>
       ) : (
         groups.map((group) => (
           <section key={group.key} className="space-y-2">
             <h2 className="text-xl font-semibold">{group.name}</h2>
-            <ul className="space-y-2">
+            {/* items-start so opening one card's option panel doesn't
+                stretch the other cards in its row. */}
+            <ul className="grid items-start gap-4 sm:grid-cols-2 md:grid-cols-3">
               {group.items.map((item) => (
                 <li key={item.id}>
                   <div
-                    className={`flex items-center gap-3 rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-700 dark:bg-stone-800 ${
+                    className={`space-y-3 rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800 ${
                       item.is_available ? "" : "opacity-60"
                     }`}
                   >
                     <MenuItemImage
                       imageUrl={item.image_url}
                       alt={item.name}
-                      className="size-12 shrink-0 rounded-md object-cover"
+                      className="aspect-square w-full rounded-md object-cover"
                     />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{item.name}</p>
-                      {item.description && (
-                        <p className="truncate text-sm text-stone-600 dark:text-stone-400">{item.description}</p>
-                      )}
-                      <p className="text-sm text-stone-600 dark:text-stone-400">
-                        {item.is_available ? formatPrice(item.price) : "Nedostupno"}
-                      </p>
+                    <div className="space-y-3">
+                      <div className="min-w-0">
+                        <p className="font-medium">{item.name}</p>
+                        {item.description && (
+                          <p className="text-sm text-stone-600 dark:text-stone-400">{item.description}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm text-stone-600 dark:text-stone-400">
+                          {item.is_available ? formatPrice(item.price) : "Nedostupno"}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={!item.is_available}
+                          onClick={() => (expanded?.itemId === item.id ? closeExpanded() : openItem(item))}
+                          className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
+                        >
+                          {expanded?.itemId === item.id ? "Zatvori" : "Dodaj"}
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      disabled={!item.is_available}
-                      onClick={() => (expanded?.itemId === item.id ? closeExpanded() : openItem(item))}
-                      className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
-                    >
-                      {expanded?.itemId === item.id ? "Zatvori" : "Dodaj"}
-                    </button>
                   </div>
 
                   {expanded?.itemId === item.id && (
@@ -373,7 +379,7 @@ export function MenuBrowser({
       )}
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800">
-        <div className="mx-auto flex max-w-2xl flex-col gap-3">
+        <div className="mx-auto flex max-w-5xl flex-col gap-3">
           {cartOpen && (
             // 20% shorter than the default max-h-64 (16rem) - 12.8rem.
             <div className="max-h-[12.8rem] overflow-y-auto">

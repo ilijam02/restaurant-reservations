@@ -1,7 +1,16 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { CreateRestaurantForm } from "@/components/create-restaurant-form";
+import { RestaurantImage } from "@/components/restaurant-image";
 import { createClient } from "@/lib/supabase/server";
+
+// Order matters: it's the order the buttons appear under each restaurant.
+const OWNER_RESTAURANT_ACTIONS = [
+  { label: "Rezervacije", segment: "reservations" },
+  { label: "Meni", segment: "menu" },
+  { label: "Osoblje", segment: "staff" },
+  { label: "Uredi", segment: "edit" },
+];
 
 export default async function OwnerHomePage() {
   const supabase = await createClient();
@@ -10,54 +19,44 @@ export default async function OwnerHomePage() {
   } = await supabase.auth.getUser();
   const { data: restaurants } = await supabase
     .from("restaurants")
-    .select("id, name")
+    .select("id, name, image_url")
     .eq("owner_id", user!.id)
     .order("name");
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader />
-      <h1 className="text-3xl font-bold">VLASNIK</h1>
+      <h1 className="sr-only">Početna</h1>
 
       <CreateRestaurantForm />
 
-      <div className="w-full max-w-sm space-y-2">
+      <div className="w-full max-w-lg space-y-2">
         <h2 className="text-xl font-semibold">Moji restorani</h2>
         {!restaurants || restaurants.length === 0 ? (
           <p className="text-stone-600 dark:text-stone-400">Još uvek nemate restorana.</p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-4">
             {restaurants.map((restaurant) => (
               <li
                 key={restaurant.id}
-                className="flex items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3 dark:border-stone-700 dark:bg-stone-800"
+                className="space-y-3 rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800"
               >
-                <span>{restaurant.name}</span>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
-                  <Link
-                    href={`/owner/restaurants/${restaurant.id}/edit`}
-                    className="text-sm font-medium text-orange-700 hover:underline dark:text-accent"
-                  >
-                    Uredi
-                  </Link>
-                  <Link
-                    href={`/owner/restaurants/${restaurant.id}/staff`}
-                    className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
-                  >
-                    Osoblje
-                  </Link>
-                  <Link
-                    href={`/owner/restaurants/${restaurant.id}/reservations`}
-                    className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
-                  >
-                    Rezervacije
-                  </Link>
-                  <Link
-                    href={`/owner/restaurants/${restaurant.id}/menu`}
-                    className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
-                  >
-                    Meni
-                  </Link>
+                <h3 className="text-lg font-semibold">{restaurant.name}</h3>
+                <RestaurantImage
+                  imageUrl={restaurant.image_url}
+                  alt=""
+                  className="aspect-video w-full rounded-md object-cover"
+                />
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {OWNER_RESTAURANT_ACTIONS.map((action) => (
+                    <Link
+                      key={action.segment}
+                      href={`/owner/restaurants/${restaurant.id}/${action.segment}`}
+                      className="rounded-md border border-stone-300 px-2 py-1.5 text-center text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:border-stone-600 dark:hover:bg-stone-700"
+                    >
+                      {action.label}
+                    </Link>
+                  ))}
                 </div>
               </li>
             ))}
