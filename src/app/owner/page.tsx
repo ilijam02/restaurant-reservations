@@ -61,12 +61,12 @@ export default async function OwnerHomePage() {
                   href={`/owner/restaurants/${restaurant.id}/reservations`}
                   className="block focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                 >
-                  <h3 className="px-4 pt-4 pb-3 text-2xl font-semibold text-orange-700 dark:text-accent">
+                  <h3 className="px-4 py-2.5 text-2xl font-semibold text-orange-700 dark:text-accent">
                     {restaurant.name}
                   </h3>
                   <RestaurantImage imageUrl={restaurant.image_url} alt="" className="aspect-video w-full object-cover" />
                 </Link>
-                <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2 px-4 py-2.5 sm:grid-cols-4">
                   {OWNER_RESTAURANT_ACTIONS.map((action) => (
                     <Link
                       key={action.segment}
