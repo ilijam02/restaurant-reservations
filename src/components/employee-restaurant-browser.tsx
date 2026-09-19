@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { ExpandableName } from "@/components/expandable-name";
 import { RestaurantImage } from "@/components/restaurant-image";
 
 type Restaurant = { id: string; name: string; image_url: string | null };
@@ -104,7 +105,7 @@ export function EmployeeRestaurantBrowser({
                 <RestaurantImage imageUrl={restaurant.image_url} alt="" className="aspect-video w-full object-cover" />
                 <div className="px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-lg">{restaurant.name}</span>
+                    <ExpandableName name={restaurant.name} className="text-lg" />
 
                     {status === "accepted" && (
                       <span className="shrink-0 rounded-full bg-success/10 px-3 py-1 text-sm font-medium text-success">
