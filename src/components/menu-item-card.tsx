@@ -13,10 +13,10 @@ const WRAP_LONG_WORDS = "[overflow-wrap:anywhere]";
 // without anything actually being cut off.
 const OVERFLOW_TOLERANCE_PX = 1;
 
-// Collapsed, the name takes one line and the description two, and the
-// description keeps its two-line height even when it's shorter or missing
-// (min-h-10 = 2 x leading-5) - so every collapsed card in a grid row is the
-// same height regardless of its text. Expanded, the text takes whatever
+// Collapsed, the name and the description each take one line, and the
+// description keeps its one-line height even when it's missing (min-h-5 =
+// 1 x leading-5) - so every collapsed card in a grid row is the same height
+// regardless of its text. Expanded, the text takes whatever
 // space it needs and only this card grows (the grid aligns cards to the
 // start of their row, so its neighbors keep their collapsed height).
 export function MenuItemCard({
@@ -72,7 +72,7 @@ export function MenuItemCard({
       }`}
     >
       <MenuItemImage imageUrl={imageUrl} alt={name} className="aspect-video w-full object-cover" />
-      <div className="space-y-2 px-4 py-3">
+      <div className="space-y-2 px-4 pt-1.5 pb-3">
         <div className="min-w-0">
           <p ref={nameRef} className={`font-medium ${WRAP_LONG_WORDS} ${textExpanded ? "" : "truncate"}`}>
             {name}
@@ -80,7 +80,7 @@ export function MenuItemCard({
           <p
             ref={descriptionRef}
             className={`text-sm leading-5 text-stone-600 dark:text-stone-400 ${WRAP_LONG_WORDS} ${
-              textExpanded ? "" : "line-clamp-2 min-h-10"
+              textExpanded ? "" : "line-clamp-1 min-h-5"
             }`}
           >
             {description}

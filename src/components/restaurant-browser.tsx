@@ -25,7 +25,7 @@ export function RestaurantBrowser({ restaurants }: { restaurants: Restaurant[] }
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Pretraži restorane"
         aria-label="Pretraži restorane"
-        className="w-full max-w-sm rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
+        className="mx-auto block w-full max-w-sm rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
       />
 
       {filtered.length === 0 ? (
@@ -39,7 +39,7 @@ export function RestaurantBrowser({ restaurants }: { restaurants: Restaurant[] }
                 className="block overflow-hidden rounded-lg border border-stone-200 bg-white hover:border-accent dark:border-stone-700 dark:bg-stone-800"
               >
                 <RestaurantImage imageUrl={restaurant.image_url} alt="" className="aspect-video w-full object-cover" />
-                <span className="block px-4 py-3">{restaurant.name}</span>
+                <span className="block px-4 py-2 text-lg">{restaurant.name}</span>
               </Link>
             </li>
           ))}
