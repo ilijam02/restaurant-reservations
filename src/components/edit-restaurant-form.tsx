@@ -3,6 +3,9 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { ImagePicker, UNCHANGED_IMAGE, type ImageChange } from "@/components/image-picker";
+import { RestaurantImage } from "@/components/restaurant-image";
+import { RESTAURANT_IMAGE_MAX_DIMENSION, removeStoredImage, uploadRestaurantImage } from "@/lib/image-upload";
 import { RestaurantHoursCalendar, type HourBlock } from "@/components/restaurant-hours-calendar";
 import { SectionsEditor, type DraftSection } from "@/components/sections-editor";
 import { LayoutsEditor, type DraftLayout } from "@/components/layouts-editor";
@@ -14,6 +17,7 @@ type Restaurant = {
   name: string;
   capacity: number | null;
   default_stay_minutes: number;
+  image_url: string | null;
 };
 
 type HoursRow = {
@@ -173,6 +177,10 @@ export function EditRestaurantForm({
 }) {
   const router = useRouter();
   const [name, setName] = useState(restaurant.name);
+  // The image currently stored on the restaurant row. Kept in state (not read
+  // from the prop) because it changes mid-save - see the note where it's set.
+  const [imageUrl, setImageUrl] = useState(restaurant.image_url);
+  const [imageChange, setImageChange] = useState<ImageChange>(UNCHANGED_IMAGE);
   const [capacity, setCapacity] = useState(restaurant.capacity?.toString() ?? "");
   const [defaultStayMinutes, setDefaultStayMinutes] = useState(
     restaurant.default_stay_minutes.toString(),
@@ -344,6 +352,50 @@ export function EditRestaurantForm({
       return original.name !== s.name || (!hasActiveLayouts && original.capacity !== Number(s.capacity));
     });
 
+    // The restaurant row (name, stay time, image) is the first thing written,
+    // straight after the read-only pre-checks above: the new image uploads
+    // before any write, so a failed upload leaves nothing half-saved, and a
+    // failed row write removes the upload again. The old object is deleted
+    // only once the row write has landed.
+    let uploadedUrl: string | null = null;
+    if (imageChange.kind === "replace") {
+      const uploaded = await uploadRestaurantImage(supabase, restaurant.id, imageChange.blob);
+      if ("error" in uploaded) {
+        setLoading(false);
+        setError(uploaded.error);
+        return;
+      }
+      uploadedUrl = uploaded.url;
+    }
+
+    const { error: restaurantError } = await supabase
+      .from("restaurants")
+      .update({
+        name,
+        default_stay_minutes: Number(defaultStayMinutes),
+        // Left out entirely when unchanged, so a save never touches the column.
+        ...(imageChange.kind === "replace" ? { image_url: uploadedUrl } : {}),
+        ...(imageChange.kind === "remove" ? { image_url: null } : {}),
+      })
+      .eq("id", restaurant.id);
+
+    if (restaurantError) {
+      await removeStoredImage(supabase, uploadedUrl);
+      setLoading(false);
+      setError(restaurantError.code === "23514" ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
+      return;
+    }
+
+    if (imageChange.kind !== "unchanged") {
+      await removeStoredImage(supabase, imageUrl);
+      // The row now points at the new image (or none). Track that locally and
+      // clear the pending change: if a later step below fails and the owner
+      // retries, this form must not upload the same image a second time or
+      // try to delete the old one again.
+      setImageUrl(imageChange.kind === "replace" ? uploadedUrl : null);
+      setImageChange(UNCHANGED_IMAGE);
+    }
+
     // Layouts: new ones first (real ids known before anything references
     // them, is_active included directly in the insert), then removed ones
     // (cascades their tables at the DB level).
@@ -393,17 +445,6 @@ export function EditRestaurantForm({
     if (updateLayoutActiveError) {
       setLoading(false);
       setError(SAVE_ERROR);
-      return;
-    }
-
-    const { error: restaurantError } = await supabase
-      .from("restaurants")
-      .update({ name, default_stay_minutes: Number(defaultStayMinutes) })
-      .eq("id", restaurant.id);
-
-    if (restaurantError) {
-      setLoading(false);
-      setError(restaurantError.code === "23514" ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
       return;
     }
 
@@ -682,6 +723,17 @@ export function EditRestaurantForm({
           className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
         />
       </div>
+
+      <ImagePicker
+        label="Slika restorana"
+        currentUrl={imageUrl}
+        value={imageChange}
+        onChange={setImageChange}
+        maxDimension={RESTAURANT_IMAGE_MAX_DIMENSION}
+        disabled={loading}
+        previewClassName="h-24 w-40 shrink-0 rounded-md object-cover"
+        renderImage={(imageUrl, className) => <RestaurantImage imageUrl={imageUrl} alt="Slika restorana" className={className} />}
+      />
 
       <div className="space-y-1">
         <label htmlFor="default-stay-minutes" className="block text-sm font-medium">

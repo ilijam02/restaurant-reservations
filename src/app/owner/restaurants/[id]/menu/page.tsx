@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { MenuCategoriesManager } from "@/components/menu-categories-manager";
 import { MenuItemsManager } from "@/components/menu-items-manager";
-import { OWNER_MENU_ITEMS } from "@/lib/owner-nav";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function OwnerRestaurantMenuPage({ params }: { params: Promise<{ id: string }> }) {
@@ -34,14 +33,14 @@ export default async function OwnerRestaurantMenuPage({ params }: { params: Prom
   const { data: items } = await supabase
     .from("menu_items")
     .select(
-      "id, category_id, name, description, price, is_available, display_order, options:menu_item_options(id, name, is_required, allow_multiple, display_order, choices:menu_item_option_choices(id, name, price_delta, display_order))",
+      "id, category_id, name, description, price, image_url, is_available, display_order, options:menu_item_options(id, name, is_required, allow_multiple, display_order, choices:menu_item_option_choices(id, name, price_delta, display_order))",
     )
     .eq("restaurant_id", id)
     .order("display_order");
 
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
-      <AppHeader backHref="/owner" menuItems={OWNER_MENU_ITEMS} />
+      <AppHeader backHref="/owner" />
       <h1 className="text-3xl font-bold">Meni - {restaurant.name}</h1>
 
       <div className="w-full max-w-2xl space-y-3 rounded-lg border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-700 dark:bg-stone-800">

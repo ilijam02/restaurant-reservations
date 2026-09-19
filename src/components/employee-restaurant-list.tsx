@@ -9,7 +9,7 @@ export async function EmployeeRestaurantList() {
 
   const { data: restaurants } = await supabase
     .from("restaurants")
-    .select("id, name")
+    .select("id, name, image_url")
     .order("name");
 
   const { data: applications } = await supabase

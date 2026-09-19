@@ -2,6 +2,9 @@
 
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { ImagePicker, UNCHANGED_IMAGE, type ImageChange } from "@/components/image-picker";
+import { MenuItemImage } from "@/components/menu-item-image";
+import { MENU_ITEM_IMAGE_MAX_DIMENSION, removeStoredImage, uploadRestaurantImage } from "@/lib/image-upload";
 
 export type MenuItemOptionChoiceRow = { id: string; name: string; price_delta: number; display_order: number };
 export type MenuItemOptionRow = {
@@ -18,6 +21,7 @@ export type MenuItemRow = {
   name: string;
   description: string | null;
   price: number;
+  image_url: string | null;
   is_available: boolean;
   display_order: number;
   options: MenuItemOptionRow[];
@@ -68,6 +72,12 @@ export function MenuItemEditor({
   const [price, setPrice] = useState(item ? item.price.toString() : "");
   const [categoryId, setCategoryId] = useState(item?.category_id ?? "");
   const [isAvailable, setIsAvailable] = useState(item?.is_available ?? true);
+  // The image currently stored on the item row, and (for a new item) the id
+  // of the row once it exists. Both change mid-save, so they're kept in state
+  // rather than read from the props - see the note where they're set.
+  const [imageUrl, setImageUrl] = useState(item?.image_url ?? null);
+  const [savedItemId, setSavedItemId] = useState<string | null>(null);
+  const [imageChange, setImageChange] = useState<ImageChange>(UNCHANGED_IMAGE);
   const [options, setOptions] = useState<DraftOption[]>(() =>
     item
       ? item.options.map((o) => ({
@@ -120,6 +130,24 @@ export function MenuItemEditor({
     setSaving(true);
 
     const supabase = createClient();
+    // An existing item, or a new one whose row an earlier attempt of this same
+    // form already created (a later step failed and the owner is retrying).
+    const existingId = item?.id ?? savedItemId;
+
+    // The new image goes up first so its URL can be part of the same row
+    // write; the old one is only deleted after that write succeeds, so a
+    // failed save never leaves the item pointing at a deleted image.
+    let uploadedUrl: string | null = null;
+    if (imageChange.kind === "replace") {
+      const uploaded = await uploadRestaurantImage(supabase, restaurantId, imageChange.blob);
+      if ("error" in uploaded) {
+        setSaving(false);
+        setError(uploaded.error);
+        return;
+      }
+      uploadedUrl = uploaded.url;
+    }
+
     const itemPayload = {
       restaurant_id: restaurantId,
       category_id: categoryId || null,
@@ -127,10 +155,13 @@ export function MenuItemEditor({
       description: description.trim() || null,
       price: Number(price),
       is_available: isAvailable,
+      // Left out entirely when unchanged, so an edit never touches the column.
+      ...(imageChange.kind === "replace" ? { image_url: uploadedUrl } : {}),
+      ...(imageChange.kind === "remove" ? { image_url: null } : {}),
     };
 
-    const { data: savedItem, error: itemError } = item
-      ? await supabase.from("menu_items").update(itemPayload).eq("id", item.id).select("id").single()
+    const { data: savedItem, error: itemError } = existingId
+      ? await supabase.from("menu_items").update(itemPayload).eq("id", existingId).select("id").single()
       : await supabase
           .from("menu_items")
           .insert({ ...itemPayload, display_order: nextDisplayOrder ?? 0 })
@@ -138,9 +169,21 @@ export function MenuItemEditor({
           .single();
 
     if (itemError || !savedItem) {
+      await removeStoredImage(supabase, uploadedUrl);
       setSaving(false);
       setError(SAVE_ERROR);
       return;
+    }
+
+    // From here the row exists and points at the new image (or none). Track
+    // that locally: if a later step below fails and the owner retries, this
+    // form must update the same row (not insert a duplicate item) and must not
+    // upload the same image again or try to delete the old one a second time.
+    setSavedItemId(savedItem.id);
+    if (imageChange.kind !== "unchanged") {
+      await removeStoredImage(supabase, imageUrl);
+      setImageUrl(imageChange.kind === "replace" ? uploadedUrl : null);
+      setImageChange(UNCHANGED_IMAGE);
     }
 
     const itemId = savedItem.id;
@@ -148,7 +191,7 @@ export function MenuItemEditor({
     // Options/choices are synced wholesale (delete then reinsert) rather
     // than diffed - simple and cheap given the small counts expected per
     // item, and deleting an option cascades its choices at the DB level.
-    if (item) {
+    if (existingId) {
       const { error: deleteOptionsError } = await supabase
         .from("menu_item_options")
         .delete()
@@ -230,6 +273,17 @@ export function MenuItemEditor({
           className={INPUT_CLASSES}
         />
       </div>
+
+      <ImagePicker
+        label="Slika"
+        currentUrl={imageUrl}
+        value={imageChange}
+        onChange={setImageChange}
+        maxDimension={MENU_ITEM_IMAGE_MAX_DIMENSION}
+        disabled={saving}
+        previewClassName="aspect-video h-20 shrink-0 rounded-md object-cover"
+        renderImage={(imageUrl, className) => <MenuItemImage imageUrl={imageUrl} alt="Slika stavke" className={className} />}
+      />
 
       <div className="flex gap-3">
         <div className="flex-1 space-y-1">

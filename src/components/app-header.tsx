@@ -2,20 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isCurrentPage, menuItemsForPath } from "@/lib/nav";
 
 const ICON_BUTTON_CLASSES =
   "flex h-10 w-10 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-900 hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:hover:bg-stone-700 dark:focus-visible:ring-offset-stone-900";
 
-export function AppHeader({
-  backHref,
-  menuItems = [],
-}: {
-  backHref?: string;
-  menuItems?: { label: string; href: string }[];
-}) {
+export function AppHeader({ backHref }: { backHref?: string }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const menuItems = menuItemsForPath(pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -72,16 +69,37 @@ export function AppHeader({
 
         {menuOpen && (
           <div className="absolute top-12 left-0 min-w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-sm dark:border-stone-700 dark:bg-stone-800">
-            {menuItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMenuOpen(false)}
-                className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-stone-700"
-              >
-                {item.label}
-              </Link>
-            ))}
+            {menuItems.map((item) => {
+              const current = isCurrentPage(pathname, item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={current ? "page" : undefined}
+                  onClick={(event) => {
+                    setMenuOpen(false);
+                    // The current page's link stays in the menu; clicking it
+                    // just refreshes the page rather than navigating. Only a
+                    // plain click: ctrl/cmd/shift/alt-click still open it in a
+                    // new tab or window like any other link.
+                    const modified = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
+                    if (current && !modified) {
+                      event.preventDefault();
+                      router.refresh();
+                    }
+                  }}
+                  // The current page gets a light accent tint (plus bolder
+                  // text, so it isn't distinguished by color alone).
+                  className={`block w-full rounded-md px-3 py-2 text-left text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent ${
+                    current
+                      ? "bg-accent/20 font-medium hover:bg-accent/30"
+                      : "hover:bg-stone-100 dark:hover:bg-stone-700"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
             <button
               type="button"
               onClick={handleLogout}

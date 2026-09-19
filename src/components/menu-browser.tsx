@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { MenuItemImage } from "@/components/menu-item-image";
+import { MenuItemCard } from "@/components/menu-item-card";
 import { CartSummary, cartTotal, formatPrice, type CartItem } from "@/components/cart-summary";
 
 const UNCATEGORIZED_KEY = "__uncategorized";
@@ -60,6 +60,20 @@ export function MenuBrowser({
   const [cartOpen, setCartOpen] = useState(initialCartItems.length > 0);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // The cart bar is fixed to the bottom of the viewport and changes height
+  // when the cart is expanded, so the space reserved under the last menu row
+  // is measured from the bar itself instead of a fixed guess - otherwise an
+  // expanded cart covers the last row even when scrolled all the way down.
+  const cartBarRef = useRef<HTMLDivElement>(null);
+  const [cartBarHeight, setCartBarHeight] = useState(0);
+  useEffect(() => {
+    const bar = cartBarRef.current;
+    if (!bar) return;
+    const observer = new ResizeObserver(() => setCartBarHeight(bar.offsetHeight));
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
 
   const [expanded, setExpanded] = useState<{ itemId: string; selections: Record<string, string[]>; quantity: number } | null>(
     null,
@@ -222,44 +236,31 @@ export function MenuBrowser({
   const total = cartTotal(cartItems);
 
   return (
-    <div className="w-full max-w-2xl space-y-6 pb-28">
+    // pb-28 is only the first-paint fallback before the bar is measured.
+    <div
+      className="w-full max-w-5xl space-y-6 pb-28"
+      style={cartBarHeight ? { paddingBottom: cartBarHeight + 48 } : undefined}
+    >
       {groups.length === 0 ? (
         <p className="text-stone-600 dark:text-stone-400">Meni trenutno nema stavki.</p>
       ) : (
         groups.map((group) => (
           <section key={group.key} className="space-y-2">
             <h2 className="text-xl font-semibold">{group.name}</h2>
-            <ul className="space-y-2">
+            {/* items-start so opening one card's option panel doesn't
+                stretch the other cards in its row. */}
+            <ul className="grid items-start gap-4 sm:grid-cols-2 md:grid-cols-3">
               {group.items.map((item) => (
                 <li key={item.id}>
-                  <div
-                    className={`flex items-center gap-3 rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-700 dark:bg-stone-800 ${
-                      item.is_available ? "" : "opacity-60"
-                    }`}
-                  >
-                    <MenuItemImage
-                      imageUrl={item.image_url}
-                      alt={item.name}
-                      className="size-12 shrink-0 rounded-md object-cover"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{item.name}</p>
-                      {item.description && (
-                        <p className="truncate text-sm text-stone-600 dark:text-stone-400">{item.description}</p>
-                      )}
-                      <p className="text-sm text-stone-600 dark:text-stone-400">
-                        {item.is_available ? formatPrice(item.price) : "Nedostupno"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!item.is_available}
-                      onClick={() => (expanded?.itemId === item.id ? closeExpanded() : openItem(item))}
-                      className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
-                    >
-                      {expanded?.itemId === item.id ? "Zatvori" : "Dodaj"}
-                    </button>
-                  </div>
+                  <MenuItemCard
+                    name={item.name}
+                    description={item.description}
+                    price={item.price}
+                    imageUrl={item.image_url}
+                    isAvailable={item.is_available}
+                    actionLabel={expanded?.itemId === item.id ? "Zatvori" : "Dodaj"}
+                    onAction={() => (expanded?.itemId === item.id ? closeExpanded() : openItem(item))}
+                  />
 
                   {expanded?.itemId === item.id && (
                     <div className="mt-2 space-y-3 rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900/40">
@@ -372,8 +373,11 @@ export function MenuBrowser({
         </div>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800">
-        <div className="mx-auto flex max-w-2xl flex-col gap-3">
+      <div
+        ref={cartBarRef}
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800"
+      >
+        <div className="mx-auto flex max-w-5xl flex-col gap-3">
           {cartOpen && (
             // 20% shorter than the default max-h-64 (16rem) - 12.8rem.
             <div className="max-h-[12.8rem] overflow-y-auto">

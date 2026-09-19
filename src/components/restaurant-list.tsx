@@ -5,7 +5,7 @@ export async function RestaurantList() {
   const supabase = await createClient();
   const { data: restaurants } = await supabase
     .from("restaurants")
-    .select("id, name")
+    .select("id, name, image_url")
     .order("name");
 
   return <RestaurantBrowser restaurants={restaurants ?? []} />;
