@@ -16,6 +16,7 @@ export default async function ReserveRestaurantPage({
     .from("restaurants")
     .select("id, name, capacity, default_stay_minutes")
     .eq("id", id)
+    .is("archived_at", null)
     .single();
 
   if (!restaurant) {

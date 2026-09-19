@@ -14,6 +14,7 @@ export default async function CustomerMapPage({
   const { data } = await supabase
     .from("restaurants")
     .select("id, name, address, latitude, longitude")
+    .is("archived_at", null)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
     .order("name");

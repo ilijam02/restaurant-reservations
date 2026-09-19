@@ -104,6 +104,36 @@ export function pathFromPublicUrl(url: string): string | null {
   }
 }
 
+// Removes every object in a restaurant's storage folder (its cover and all its
+// menu photos). Unlike removeStoredImage this is NOT best-effort: it returns
+// false if anything couldn't be removed, so a restaurant deletion can stop
+// before the row goes - the storage delete policy checks ownership through the
+// restaurants row, so the files can't be cleaned up afterwards.
+const FOLDER_PAGE_SIZE = 100;
+const MAX_FOLDER_PAGES = 100;
+
+export async function removeRestaurantImageFolder(supabase: SupabaseClient, restaurantId: string): Promise<boolean> {
+  try {
+    const bucket = supabase.storage.from(IMAGE_BUCKET);
+    // Each round removes what it listed, so the next list starts from the top
+    // again. The page cap only guards against a remove that reports success
+    // while deleting nothing.
+    for (let page = 0; page < MAX_FOLDER_PAGES; page++) {
+      const { data: objects, error: listError } = await bucket.list(restaurantId, { limit: FOLDER_PAGE_SIZE });
+      if (listError) return false;
+      if (!objects || objects.length === 0) return true;
+
+      const { data: removed, error: removeError } = await bucket.remove(
+        objects.map((object) => `${restaurantId}/${object.name}`),
+      );
+      if (removeError || !removed || removed.length === 0) return false;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // Best-effort cleanup of an image that's no longer referenced. A failure
 // here just leaves an orphaned object - never worth failing a save over, so
 // nothing in here is allowed to throw either.

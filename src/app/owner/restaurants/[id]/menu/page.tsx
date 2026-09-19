@@ -15,6 +15,7 @@ export default async function OwnerRestaurantMenuPage({ params }: { params: Prom
     .from("restaurants")
     .select("id, name, owner_id")
     .eq("id", id)
+    .is("archived_at", null)
     .single();
 
   // The restaurants SELECT policy is public (any authenticated user, needed

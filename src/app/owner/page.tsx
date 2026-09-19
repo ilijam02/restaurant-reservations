@@ -29,6 +29,7 @@ export default async function OwnerHomePage() {
     .from("restaurants")
     .select("id, name, image_url")
     .eq("owner_id", user!.id)
+    .is("archived_at", null)
     .order("name");
 
   return (
