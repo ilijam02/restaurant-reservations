@@ -84,7 +84,7 @@ export function EmployeeRestaurantBrowser({
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Pretraži restorane"
         aria-label="Pretraži restorane"
-        className="w-full max-w-sm rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
+        className="mx-auto block w-full max-w-sm rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
       />
 
       {filtered.length === 0 ? (
@@ -104,7 +104,7 @@ export function EmployeeRestaurantBrowser({
                 <RestaurantImage imageUrl={restaurant.image_url} alt="" className="aspect-video w-full object-cover" />
                 <div className="px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <span>{restaurant.name}</span>
+                    <span className="text-lg">{restaurant.name}</span>
 
                     {status === "accepted" && (
                       <span className="shrink-0 rounded-full bg-success/10 px-3 py-1 text-sm font-medium text-success">

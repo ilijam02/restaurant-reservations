@@ -61,7 +61,7 @@ export default async function OwnerHomePage() {
                   href={`/owner/restaurants/${restaurant.id}/reservations`}
                   className="block focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                 >
-                  <h3 className="px-4 py-1 text-2xl font-semibold text-orange-700 dark:text-accent">
+                  <h3 className="px-4 py-1 text-2xl font-semibold">
                     {restaurant.name}
                   </h3>
                   <RestaurantImage imageUrl={restaurant.image_url} alt="" className="aspect-video w-full object-cover" />

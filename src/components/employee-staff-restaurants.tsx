@@ -37,7 +37,7 @@ export async function EmployeeStaffRestaurants() {
             className="block overflow-hidden rounded-lg border border-stone-200 bg-white hover:border-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:border-stone-700 dark:bg-stone-800"
           >
             <RestaurantImage imageUrl={restaurant.image_url} alt="" className="aspect-video w-full object-cover" />
-            <span className="block px-4 py-3">{restaurant.name}</span>
+            <span className="block px-4 py-3 text-lg">{restaurant.name}</span>
           </Link>
         </li>
       ))}
