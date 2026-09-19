@@ -397,7 +397,11 @@ export function EditRestaurantForm({
     if (restaurantError) {
       await removeStoredImage(supabase, uploadedUrl);
       setLoading(false);
-      setError(restaurantError.code === "23514" ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
+      // 23514 is any check constraint, and restaurants now has several (the
+      // location ones too), so tell them apart by constraint name.
+      const isStayMinutesViolation =
+        restaurantError.code === "23514" && restaurantError.message.includes("restaurants_default_stay_minutes_range");
+      setError(isStayMinutesViolation ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
       return;
     }
 

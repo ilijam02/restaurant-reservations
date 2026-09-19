@@ -18,6 +18,15 @@ export function mapStyleFor(dark: boolean): string {
   return dark ? MAP_STYLE_DARK : MAP_STYLE_LIGHT;
 }
 
+// Address text and pin are independent values, so an owner can retype the
+// address and forget to move the pin. This compares the address as it is now
+// with the address the pin was last set for (ignoring case and spacing, which
+// don't move a restaurant) so the form can warn about exactly that.
+export function addressChangedSincePin(address: string, addressAtPin: string): boolean {
+  const normalize = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalize(address) !== normalize(addressAtPin);
+}
+
 // The map page takes an optional restaurant to fly to, so the restaurant page's
 // "Otvori na mapi" button and the map's own pins share one URL shape.
 export function mapHrefForRestaurant(restaurantId: string): string {

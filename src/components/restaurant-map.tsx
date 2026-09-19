@@ -119,8 +119,8 @@ export function RestaurantMap({ restaurants, focusId }: { restaurants: MapRestau
     if (!marker.getPopup()?.isOpen()) marker.togglePopup();
   }, [mapInstance, focused, restaurants]);
 
-  // 20% wider and 10% taller than the original max-w-5xl (1024px) and
-  // viewport-minus-10rem box.
+  // 20% wider than the original max-w-5xl (1024px); the height follows the
+  // width at 16:9 (aspect-video), so the map keeps its shape at any window size.
   return (
     <div className="w-full max-w-[1229px] space-y-3">
       {restaurants.length === 0 && (
@@ -130,7 +130,7 @@ export function RestaurantMap({ restaurants, focusId }: { restaurants: MapRestau
         ref={containerRef}
         role="application"
         aria-label="Mapa restorana"
-        className="h-[calc((100dvh-10rem)*1.1)] min-h-88 w-full overflow-hidden rounded-lg border border-stone-200 dark:border-stone-700"
+        className="aspect-video w-full overflow-hidden rounded-lg border border-stone-200 dark:border-stone-700"
       />
     </div>
   );
