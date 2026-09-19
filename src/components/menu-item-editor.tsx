@@ -264,7 +264,7 @@ export function MenuItemEditor({
         onChange={setImageChange}
         maxDimension={MENU_ITEM_IMAGE_MAX_DIMENSION}
         disabled={saving}
-        previewClassName="size-20 shrink-0 rounded-md object-cover"
+        previewClassName="aspect-video h-20 shrink-0 rounded-md object-cover"
         renderImage={(imageUrl, className) => <MenuItemImage imageUrl={imageUrl} alt="Slika stavke" className={className} />}
       />
 

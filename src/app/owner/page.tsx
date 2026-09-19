@@ -5,12 +5,20 @@ import { RestaurantImage } from "@/components/restaurant-image";
 import { createClient } from "@/lib/supabase/server";
 
 // Order matters: it's the order the buttons appear under each restaurant.
+// "Uredi" is a plain orange text link rather than an outlined button.
 const OWNER_RESTAURANT_ACTIONS = [
-  { label: "Rezervacije", segment: "reservations" },
-  { label: "Meni", segment: "menu" },
-  { label: "Osoblje", segment: "staff" },
-  { label: "Uredi", segment: "edit" },
+  { label: "Rezervacije", segment: "reservations", accentText: false },
+  { label: "Meni", segment: "menu", accentText: false },
+  { label: "Osoblje", segment: "staff", accentText: false },
+  { label: "Uredi", segment: "edit", accentText: true },
 ];
+
+const ACTION_BASE_CLASSES =
+  "rounded-md px-2 py-1.5 text-center text-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent";
+const ACTION_BUTTON_CLASSES = `${ACTION_BASE_CLASSES} border border-stone-300 hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700`;
+// text-orange-700 (not text-accent) in light mode: the bright accent fill
+// doesn't reach AA as small text on the light background - see CLAUDE.md.
+const ACTION_TEXT_CLASSES = `${ACTION_BASE_CLASSES} font-medium text-orange-700 hover:underline dark:text-accent`;
 
 export default async function OwnerHomePage() {
   const supabase = await createClient();
@@ -39,20 +47,31 @@ export default async function OwnerHomePage() {
             {restaurants.map((restaurant) => (
               <li
                 key={restaurant.id}
-                className="space-y-3 rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800"
+                // Hovering the name/image link highlights the whole card, like
+                // the customer and employee restaurant cards (which are single
+                // links). The card itself can't be the link - it also holds
+                // the action buttons below.
+                className="overflow-hidden rounded-lg border border-stone-200 bg-white has-[[data-card-link]:hover]:border-accent dark:border-stone-700 dark:bg-stone-800"
               >
-                <h3 className="text-lg font-semibold">{restaurant.name}</h3>
-                <RestaurantImage
-                  imageUrl={restaurant.image_url}
-                  alt=""
-                  className="aspect-video w-full rounded-md object-cover"
-                />
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {/* The whole name section and the image are one link to the
+                    restaurant's reservations, the same place as the
+                    "Rezervacije" button. */}
+                <Link
+                  data-card-link
+                  href={`/owner/restaurants/${restaurant.id}/reservations`}
+                  className="block focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                >
+                  <h3 className="px-4 pt-4 pb-3 text-2xl font-semibold text-orange-700 dark:text-accent">
+                    {restaurant.name}
+                  </h3>
+                  <RestaurantImage imageUrl={restaurant.image_url} alt="" className="aspect-video w-full object-cover" />
+                </Link>
+                <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">
                   {OWNER_RESTAURANT_ACTIONS.map((action) => (
                     <Link
                       key={action.segment}
                       href={`/owner/restaurants/${restaurant.id}/${action.segment}`}
-                      className="rounded-md border border-stone-300 px-2 py-1.5 text-center text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent dark:border-stone-600 dark:hover:bg-stone-700"
+                      className={action.accentText ? ACTION_TEXT_CLASSES : ACTION_BUTTON_CLASSES}
                     >
                       {action.label}
                     </Link>

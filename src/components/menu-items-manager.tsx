@@ -173,7 +173,7 @@ export function MenuItemsManager({
                     <MenuItemImage
                       imageUrl={item.image_url}
                       alt={item.name}
-                      className="size-12 shrink-0 rounded-md object-cover"
+                      className="aspect-video h-12 shrink-0 rounded-md object-cover"
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{item.name}</p>

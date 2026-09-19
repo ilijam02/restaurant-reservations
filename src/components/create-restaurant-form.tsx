@@ -37,7 +37,8 @@ export function CreateRestaurantForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm space-y-4 rounded-lg border border-stone-200 bg-white p-8 shadow-sm dark:border-stone-700 dark:bg-stone-800"
+      // max-w-lg matches the restaurant list below it (owner landing page).
+      className="w-full max-w-lg space-y-3 rounded-lg border border-stone-200 bg-white p-5 shadow-sm dark:border-stone-700 dark:bg-stone-800"
     >
       <h2 className="text-xl font-semibold">Dodaj restoran</h2>
 
@@ -45,13 +46,23 @@ export function CreateRestaurantForm() {
         <label htmlFor="name" className="block text-sm font-medium">
           Naziv restorana
         </label>
-        <input
-          id="name"
-          required
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
-        />
+        {/* Input and button share a row to keep the form short. */}
+        <div className="flex gap-2">
+          <input
+            id="name"
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-base text-stone-900 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-accent dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="shrink-0 rounded-md bg-accent px-4 py-2 text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
+          >
+            {loading ? "Dodavanje..." : "Dodaj restoran"}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -59,14 +70,6 @@ export function CreateRestaurantForm() {
           {error}
         </p>
       )}
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full rounded-md bg-accent px-3 py-2 text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
-      >
-        {loading ? "Dodavanje..." : "Dodaj restoran"}
-      </button>
     </form>
   );
 }
