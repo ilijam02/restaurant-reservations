@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { PAYMENT_STATUS_LABELS, type PaymentStatus } from "@/lib/payments";
 import { createClient } from "@/lib/supabase/client";
 
 type ReservationStatus = "confirmed" | "preparing_order" | "order_prepared" | "ongoing" | "completed" | "no_show" | "cancelled";
@@ -13,7 +14,7 @@ export type EmployeeReservationRow = {
   status: ReservationStatus;
   reservation_tables: { tables: { name: string } | null }[];
   reservation_sections: { sections: { name: string } | null }[];
-  orders: { status: string }[];
+  orders: { status: string; payment_status: PaymentStatus }[];
 };
 
 const STATUS_LABELS: Record<ReservationStatus, string> = {
@@ -195,6 +196,11 @@ function ReservationCard({
           <p className="font-medium">{formatDateTime(reservation.starts_at)}</p>
           <p className="text-sm text-stone-600 dark:text-stone-400">{guestCountLabel(reservation.party_size)}</p>
           {seating && <p className="text-sm text-stone-600 dark:text-stone-400">{seating}</p>}
+          {reservation.orders[0] && (
+            <p className="text-sm text-stone-600 dark:text-stone-400">
+              Porudžbina: {PAYMENT_STATUS_LABELS[reservation.orders[0].payment_status]}
+            </p>
+          )}
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-sm font-medium ${STATUS_CLASSES[reservation.status]}`}>
           {STATUS_LABELS[reservation.status]}

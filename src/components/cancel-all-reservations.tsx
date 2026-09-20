@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CancelDialog } from "@/components/reservations-list";
+import { requestRefunds } from "@/lib/payments";
 import { createClient } from "@/lib/supabase/client";
 
 // The owner's "cancel everything that's still cancellable" for one restaurant,
@@ -43,14 +44,27 @@ export function CancelAllReservations({
       p_restaurant_id: restaurantId,
     });
 
+    let refundNotice = "";
+    if (!rpcError && typeof cancelled === "number" && cancelled > 0) {
+      // Cancelling only queues refunds for paid orders (the owner cancelling
+      // always refunds); this sends them to Stripe. A failure leaves them
+      // "refund pending" - retryable from the reservation lists.
+      const refunds = await requestRefunds();
+      if ("error" in refunds || refunds.failed > 0) {
+        refundNotice = " Povraćaj novca za neke porudžbine nije uspeo i biće ponovo pokušan - proverite listu rezervacija.";
+      }
+    }
+
     setLoading(false);
     if (rpcError) {
       setError(rpcError.code === "P0001" ? rpcError.message : "Otkazivanje nije uspelo. Pokušajte ponovo.");
     } else if (typeof cancelled === "number" && cancelled < requested) {
       const skipped = requested - cancelled;
       setNotice(
-        `Otkazano: ${cancelled} od ${requested}. Rezervacije koje nisu otkazane (${skipped}) su se u međuvremenu promenile (npr. gost je već seo).`,
+        `Otkazano: ${cancelled} od ${requested}. Rezervacije koje nisu otkazane (${skipped}) su se u međuvremenu promenile (npr. gost je već seo).${refundNotice}`,
       );
+    } else if (refundNotice) {
+      setNotice(refundNotice.trim());
     }
 
     // Refresh on failure too: the list may have changed under this page.
@@ -59,7 +73,7 @@ export function CancelAllReservations({
 
   const description =
     `Otkazati sve rezervacije (${cancellableCount}) u restoranu ${restaurantName} koje još nisu u toku? ` +
-    "Porudžbine će biti otkazane zajedno sa rezervacijama, a novac za porudžbine koje se već pripremaju neće biti vraćen. " +
+    "Porudžbine će biti otkazane zajedno sa rezervacijama, a novac za plaćene porudžbine biće vraćen gostima. " +
     "To se ne može poništiti.";
 
   return (

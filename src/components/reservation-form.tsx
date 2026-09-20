@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TablePicker, type PickableTable } from "@/components/table-picker";
 import { CartSummary, cartTotal, formatPrice, type CartItem } from "@/components/cart-summary";
+import { startCheckout } from "@/lib/payments";
 
 type Restaurant = {
   id: string;
@@ -249,11 +250,10 @@ export function ReservationForm({
       }
     }
 
-    setLoading(false);
     const confirmedAt = new Date(data.starts_at);
-    // Not "je plaćena" (is paid) - there's no real payment integration yet
-    // (see the placeholder card above the submit button), so claiming a
-    // charge went through would be actively misleading.
+    // The order is recorded but not paid until Stripe says so - the
+    // reservation is confirmed either way, and an unpaid order can be paid
+    // later from "Moje rezervacije" - so this never claims a charge went through.
     const orderText = cartItems.length > 0 ? ` Porudžbina u iznosu od ${formatPrice(cartTotal(cartItems))} je zabeležena.` : "";
     setConfirmation(
       `Potvrđeno: rezervacija za ${confirmedAt.toLocaleDateString("sr-RS")} u ${confirmedAt.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.${assignedText}${orderText}`,
@@ -262,6 +262,18 @@ export function ReservationForm({
     setStayMinutes("");
     setSectionId("");
     setSelectedTableIds([]);
+
+    if (cartItems.length > 0) {
+      const checkout = await startCheckout(data.id);
+      if ("url" in checkout) {
+        // Off to Stripe's hosted page; the button stays disabled until the page unloads.
+        window.location.assign(checkout.url);
+        return;
+      }
+      setError(`${checkout.error} Rezervacija je potvrđena - porudžbinu možete platiti u "Moje rezervacije".`);
+    }
+
+    setLoading(false);
   }
 
   return (
@@ -413,7 +425,8 @@ export function ReservationForm({
           <div className="space-y-2 rounded-md border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900/40">
             <h3 className="text-sm font-medium">Plaćanje karticom</h3>
             <p className="text-sm text-stone-600 dark:text-stone-400">
-              Integracija plaćanja uskoro dolazi - trenutno se samo simulira.
+              Nakon potvrde rezervacije bićete preusmereni na Stripe stranicu za plaćanje. Ovo je test režim - novac se
+              ne naplaćuje, koristite test karticu 4242 4242 4242 4242.
             </p>
           </div>
         )}

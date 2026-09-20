@@ -412,3 +412,16 @@ enabled = true
 # declarative_schema_path = "./schemas"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# Payment functions (test-mode Stripe). None uses the platform's JWT check:
+# create-checkout and refund-order validate the caller's token themselves with
+# auth.getUser() (works with either JWT signing-key setup), and stripe-webhook is
+# called by Stripe, authenticated by its signature. See supabase/functions/.
+[functions.create-checkout]
+verify_jwt = false
+
+[functions.refund-order]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false

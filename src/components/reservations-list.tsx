@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CartSummary, type CartItem } from "@/components/cart-summary";
+import { PAYMENT_STATUS_LABELS, requestRefunds, startCheckout, type PaymentStatus } from "@/lib/payments";
 import { createClient } from "@/lib/supabase/client";
 
 type ReservationStatus = "confirmed" | "preparing_order" | "order_prepared" | "ongoing" | "cancelled" | "completed" | "no_show";
@@ -32,7 +33,7 @@ export type ReservationRow = {
   restaurants: { name: string } | null;
   reservation_tables: { tables: { name: string } | null }[];
   reservation_sections: { party_size: number; sections: { name: string } | null }[];
-  orders: { status: string; items: CartItem[] }[];
+  orders: { status: string; payment_status: PaymentStatus; items: CartItem[] }[];
   // Only filled in for the owner's lists (see fetchOwnerReservations) - the
   // customer's own list has no use for their own name.
   customer_name?: string | null;
@@ -149,14 +150,18 @@ function cancellationNote(reservation: ReservationRow, perspective: Reservations
   return cancelledByCustomer ? "Gost je otkazao rezervaciju" : "Otkazali ste rezervaciju";
 }
 
-// Shown in the cancel confirmation when the kitchen has already started on
-// (or finished) the order. The actual refund - or lack of one - isn't
-// implemented yet (payment is still a placeholder, see ISSUES.md); this only
-// tells the user up front what the policy will be.
-function noRefundWarning(status: ReservationStatus) {
-  if (status === "preparing_order") return "Upozorenje: porudžbina se već priprema - novac za nju neće biti vraćen.";
-  if (status === "order_prepared") return "Upozorenje: porudžbina je već spremna - novac za nju neće biti vraćen.";
-  return null;
+// Shown in the cancel confirmation, and only when there is money involved (a
+// paid order). Mirrors the refund policy cancel_reservation() applies: the
+// restaurant's owner cancelling always refunds; a customer cancelling refunds
+// only while the reservation is still "confirmed" - once the kitchen has
+// started, the payment is kept. The DB decides; this only says so up front.
+function refundNote(reservation: ReservationRow, perspective: ReservationsPerspective) {
+  if (reservation.orders[0]?.payment_status !== "paid") return null;
+
+  if (perspective === "owner") return "Novac za plaćenu porudžbinu biće vraćen gostu.";
+  if (reservation.status === "preparing_order") return "Upozorenje: porudžbina se već priprema - novac za nju neće biti vraćen.";
+  if (reservation.status === "order_prepared") return "Upozorenje: porudžbina je već spremna - novac za nju neće biti vraćen.";
+  return "Novac za plaćenu porudžbinu biće vraćen.";
 }
 
 // A real modal: focus moves into it (onto the safe "Ne, zadrži" choice),
@@ -258,26 +263,46 @@ export function CancelDialog({
   );
 }
 
+const PAYMENT_CLASSES: Record<PaymentStatus, string> = {
+  unpaid: "text-amber-700 dark:text-warning",
+  paid: "text-success",
+  refund_pending: "text-amber-700 dark:text-warning",
+  refunded: "text-stone-600 dark:text-stone-400",
+};
+
 function ReservationCard({
   reservation,
   perspective,
   cancellable,
   cancelling,
+  busy,
   error,
   onCancelRequest,
+  onPay,
+  onRetryRefund,
 }: {
   reservation: ReservationRow;
   perspective: ReservationsPerspective;
   cancellable: boolean;
   cancelling: boolean;
+  // A payment or refund call for this card is in flight.
+  busy: boolean;
   error?: string;
   onCancelRequest: (reservation: ReservationRow) => void;
+  onPay: (reservation: ReservationRow) => void;
+  onRetryRefund: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const order = reservation.orders[0];
   const hasOrder = !!order && order.items.length > 0;
   const cancelledNote = cancellationNote(reservation, perspective);
   const seating = seatingLabel(reservation);
+  const paymentStatus = order?.payment_status;
+  // An unpaid order on a cancelled reservation has nothing to say about money.
+  const showPayment = hasOrder && !!paymentStatus && (order.status === "confirmed" || paymentStatus !== "unpaid");
+  // Only the customer pays, and only while the reservation can still be
+  // cancelled (i.e. it hasn't started or ended).
+  const canPay = perspective === "customer" && hasOrder && order.status === "confirmed" && paymentStatus === "unpaid" && cancellable;
 
   return (
     <li className="rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800">
@@ -311,6 +336,29 @@ function ReservationCard({
             </button>
           )}
           {cancelledNote && <span className="text-sm text-stone-600 dark:text-stone-400">{cancelledNote}</span>}
+          {showPayment && paymentStatus && (
+            <span className={`text-sm font-medium ${PAYMENT_CLASSES[paymentStatus]}`}>{PAYMENT_STATUS_LABELS[paymentStatus]}</span>
+          )}
+          {canPay && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onPay(reservation)}
+              className="rounded-md bg-accent px-3 py-1 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
+            >
+              {busy ? "Preusmeravanje..." : "Plati porudžbinu"}
+            </button>
+          )}
+          {paymentStatus === "refund_pending" && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRetryRefund}
+              className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-600 dark:hover:bg-stone-700"
+            >
+              {busy ? "Povraćaj..." : "Pokušaj povraćaj ponovo"}
+            </button>
+          )}
           {cancellable && (
             <button
               type="button"
@@ -355,26 +403,39 @@ export function ReservationsList({
 }) {
   const router = useRouter();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pendingCancel, setPendingCancel] = useState<ReservationRow | null>(null);
 
   const copy = COPY[perspective];
 
-  async function handleCancel(reservationId: string) {
+  async function handleCancel(reservation: ReservationRow) {
+    const reservationId = reservation.id;
     setErrors((previous) => ({ ...previous, [reservationId]: "" }));
     setCancellingId(reservationId);
 
     const supabase = createClient();
     const { error } = await supabase.rpc("cancel_reservation", { p_reservation_id: reservationId });
 
-    setCancellingId(null);
     if (error) {
       // The RPC's own messages (raised with the default P0001) are already
       // user-facing Serbian; anything else (network, permission) isn't.
       const message = error.code === "P0001" ? error.message : "Otkazivanje nije uspelo. Pokušajte ponovo.";
       setErrors((previous) => ({ ...previous, [reservationId]: message }));
+    } else if (reservation.orders[0]?.payment_status === "paid") {
+      // Cancelling only queues the refund (or not, per the refund policy in
+      // cancel_reservation()); this sends whatever was queued to Stripe. If it
+      // fails the order stays "refund pending" and the card offers a retry.
+      const refunds = await requestRefunds();
+      if ("error" in refunds || refunds.failed > 0) {
+        setErrors((previous) => ({
+          ...previous,
+          [reservationId]: "Rezervacija je otkazana, ali povraćaj novca nije uspeo. Pokušajte ponovo.",
+        }));
+      }
     }
 
+    setCancellingId(null);
     // Refresh on failure too: the usual reason is that the reservation
     // changed under this (stale) page - already cancelled, started, expired -
     // and the card should catch up rather than keep offering the button.
@@ -383,9 +444,39 @@ export function ReservationsList({
 
   function confirmCancel() {
     if (!pendingCancel) return;
-    const reservationId = pendingCancel.id;
+    const reservation = pendingCancel;
     setPendingCancel(null);
-    handleCancel(reservationId);
+    handleCancel(reservation);
+  }
+
+  async function handlePay(reservation: ReservationRow) {
+    setErrors((previous) => ({ ...previous, [reservation.id]: "" }));
+    setBusyId(reservation.id);
+
+    const checkout = await startCheckout(reservation.id);
+    if ("url" in checkout) {
+      // Off to Stripe's hosted page; busy stays set until the page unloads.
+      window.location.assign(checkout.url);
+      return;
+    }
+
+    setBusyId(null);
+    setErrors((previous) => ({ ...previous, [reservation.id]: checkout.error }));
+    router.refresh();
+  }
+
+  async function handleRetryRefund(reservationId: string) {
+    setErrors((previous) => ({ ...previous, [reservationId]: "" }));
+    setBusyId(reservationId);
+
+    const refunds = await requestRefunds();
+    setBusyId(null);
+    if ("error" in refunds) {
+      setErrors((previous) => ({ ...previous, [reservationId]: refunds.error }));
+    } else if (refunds.failed > 0) {
+      setErrors((previous) => ({ ...previous, [reservationId]: "Povraćaj novca nije uspeo. Pokušajte ponovo." }));
+    }
+    router.refresh();
   }
 
   if (reservations.length === 0) {
@@ -408,8 +499,11 @@ export function ReservationsList({
         perspective={perspective}
         cancellable={isCancellable(reservation, nowDate)}
         cancelling={cancellingId === reservation.id}
+        busy={busyId === reservation.id}
         error={errors[reservation.id]}
         onCancelRequest={setPendingCancel}
+        onPay={handlePay}
+        onRetryRefund={() => handleRetryRefund(reservation.id)}
       />
     );
   }
@@ -445,7 +539,7 @@ export function ReservationsList({
             (pendingCancel.orders.length > 0 ? " Porudžbina će biti otkazana zajedno sa rezervacijom." : "") +
             " To se ne može poništiti."
           }
-          warning={noRefundWarning(pendingCancel.status)}
+          warning={refundNote(pendingCancel, perspective)}
           onConfirm={confirmCancel}
           onClose={() => setPendingCancel(null)}
         />
