@@ -161,7 +161,7 @@ describe("validatePhone", () => {
 
 describe("validateName", () => {
   it("accepts names in Latin and Cyrillic with the usual punctuation", () => {
-    for (const good of ["Ana", "Đorđe", "Јована", "Ana Marija", "Jovanović-Petrović", "O'Brien", "O’Brien", "St. John"]) {
+    for (const good of ["Ana", "Đorđe", "Јована", "Ana Marija", "Jovanović-Petrović", "O'Brien", "O’Brien", "St. John", "J.R.R.", "A.B.", "J. R. R. Tolkien", "J.R.R. Tolkien", "Ј.Р.Р."]) {
       expect(validateName(good, "Ime").ok, good).toBe(true);
     }
   });
@@ -173,7 +173,7 @@ describe("validateName", () => {
   it("rejects blank, digits, symbols and leftover punctuation", () => {
     expect(validateName("   ", "Ime")).toEqual({ ok: false, error: "Ime je obavezno." });
     expect(validateName("", "Prezime")).toEqual({ ok: false, error: "Prezime je obavezno." });
-    for (const bad of ["Ana2", "R2-D2", "Ana@", "-Ana", "Ana-", "Ana--Marija", "<b>Ana</b>", "Ana_"]) {
+    for (const bad of ["Ana2", "R2-D2", "Ana@", "-Ana", "Ana-", "Ana--Marija", "<b>Ana</b>", "Ana_", ".Ana", "Ana..Marija", "J..R", "J.R.2", "..."]) {
       expect(validateName(bad, "Ime").ok, bad).toBe(false);
     }
   });

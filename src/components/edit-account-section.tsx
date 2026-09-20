@@ -157,6 +157,13 @@ export function EditAccountSection({ initial }: { initial: AccountFields }) {
     if (!result.ok) {
       setErrors(result.errors ?? {});
       setFormError(result.error ?? null);
+      if (result.authChanged) {
+        // The email/password already changed, so the typed "current" password
+        // is stale and the old new-password pair would be re-applied on retry.
+        // Clear them, and refresh so the form compares against the new email.
+        setValues((current) => ({ ...current, newPassword: "", confirmNewPassword: "", currentPassword: "" }));
+        router.refresh();
+      }
       return;
     }
 

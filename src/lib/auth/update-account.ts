@@ -6,7 +6,11 @@ import { validateAccountForm, type AccountFieldErrors, type AccountFormInput } f
 
 export type UpdateAccountResult =
   | { ok: true; message: string }
-  | { ok: false; error?: string; errors?: AccountFieldErrors };
+  // authChanged: the email and/or password were already changed when the
+  // failure happened (the profile write after them failed), so the password the
+  // user typed as "current" is stale and the form has to start over from what
+  // is now stored - see EditAccountSection.
+  | { ok: false; error?: string; errors?: AccountFieldErrors; authChanged?: boolean };
 
 const SAVE_FAILED_ERROR = "Čuvanje izmena nije uspelo. Pokušajte ponovo.";
 const RATE_LIMITED_ERROR = "Previše pokušaja. Pokušajte ponovo za nekoliko minuta.";
@@ -105,12 +109,14 @@ export async function updateAccountAction(rawInput: AccountFormInput): Promise<U
       })
       .eq("id", user.id);
     if (error) {
-      return {
-        ok: false,
-        error: authChanged
-          ? "Email ili lozinka su promenjeni, ali ime i telefon nisu sačuvani. Pokušajte ponovo."
-          : SAVE_FAILED_ERROR,
-      };
+      return authChanged
+        ? {
+            ok: false,
+            authChanged: true,
+            error:
+              "Email ili lozinka su promenjeni, ali ime i telefon nisu sačuvani. Pokušajte ponovo (ako ste promenili lozinku, trenutna lozinka je sada nova).",
+          }
+        : { ok: false, error: SAVE_FAILED_ERROR };
     }
   }
 

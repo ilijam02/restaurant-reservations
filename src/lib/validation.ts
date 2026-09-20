@@ -11,8 +11,11 @@ export const NAME_MAX_LENGTH = 50;
 
 // Letters (any script, so Latin and Cyrillic diacritics both pass) in words
 // separated by a single space, hyphen or apostrophe - "Jovanović-Petrović",
-// "O'Brien", "Ana Marija", "St. John". No digits or other symbols.
-const NAME_REGEX = /^[\p{L}\p{M}]+\.?(?:[ '’-][\p{L}\p{M}]+\.?)*$/u;
+// "O'Brien", "Ana Marija", "St. John". A word may contain dots between its
+// letters and end with one, for initials: "J.R.R.", "A.B.". No digits or other
+// symbols, and no empty parts (".Ana", "Ana..Marija").
+const NAME_WORD = String.raw`[\p{L}\p{M}]+(?:\.[\p{L}\p{M}]+)*\.?`;
+const NAME_REGEX = new RegExp(`^${NAME_WORD}(?:[ '’-]${NAME_WORD})*$`, "u");
 
 export function validateName(raw: string, label: "Ime" | "Prezime"): Validated {
   const value = raw.trim().replace(/\s+/g, " ");
@@ -21,7 +24,7 @@ export function validateName(raw: string, label: "Ime" | "Prezime"): Validated {
     return { ok: false, error: `${label} može imati najviše ${NAME_MAX_LENGTH} znakova.` };
   }
   if (!NAME_REGEX.test(value)) {
-    return { ok: false, error: `${label} može sadržati samo slova, razmake, crtice i apostrofe.` };
+    return { ok: false, error: `${label} može sadržati samo slova, tačke, razmake, crtice i apostrofe.` };
   }
   return { ok: true, value };
 }
