@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { FavoriteButton } from "@/components/favorite-button";
 import { MenuBrowser } from "@/components/menu-browser";
+import { RestaurantViewTracker } from "@/components/restaurant-view-tracker";
 import type { CartItem } from "@/components/cart-summary";
 import { mapHrefForRestaurant } from "@/lib/map";
 import { createClient } from "@/lib/supabase/server";
@@ -49,6 +51,9 @@ export default async function CustomerRestaurantPage({
 
   const isOwnRestaurantDraft = draftOrder?.restaurant_id === id;
 
+  // RLS limits favorites to the caller's own rows, so this is "is it mine".
+  const { data: favorite } = await supabase.from("favorites").select("restaurant_id").eq("restaurant_id", id).maybeSingle();
+
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref="/customer" />
@@ -76,7 +81,11 @@ export default async function CustomerRestaurantPage({
           )}
         </div>
       )}
-      <h1 className="text-3xl font-bold">{restaurant.name}</h1>
+      <RestaurantViewTracker restaurantId={id} />
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <h1 className="text-3xl font-bold">{restaurant.name}</h1>
+        <FavoriteButton restaurantId={id} initialIsFavorite={!!favorite} />
+      </div>
       <MenuBrowser
         restaurantId={id}
         categories={categories ?? []}

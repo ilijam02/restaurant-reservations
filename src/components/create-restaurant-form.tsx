@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isRestaurantNameTaken, RESTAURANT_NAME_TAKEN_ERROR } from "@/lib/restaurant-name";
 
 export function CreateRestaurantForm() {
   const router = useRouter();
@@ -26,7 +27,7 @@ export function CreateRestaurantForm() {
 
     setLoading(false);
     if (error) {
-      setError("Kreiranje restorana nije uspelo. Pokušajte ponovo.");
+      setError(isRestaurantNameTaken(error) ? RESTAURANT_NAME_TAKEN_ERROR : "Kreiranje restorana nije uspelo. Pokušajte ponovo.");
       return;
     }
 
