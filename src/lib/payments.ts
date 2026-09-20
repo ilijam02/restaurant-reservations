@@ -29,11 +29,19 @@ export async function functionErrorMessage(error: unknown, fallback: string): Pr
   return fallback;
 }
 
+// Where Stripe sends the customer back to: the restaurant's reservation page
+// right after booking ("reserve"), or "Moje rezervacije" when paying an
+// existing order from there ("reservations").
+export type CheckoutReturn = "reserve" | "reservations";
+
 // Creates a Stripe Checkout Session for the reservation's confirmed order. The
 // amount is computed by the function from the order, never sent from here.
-export async function startCheckout(reservationId: string): Promise<{ url: string } | { error: string }> {
+export async function startCheckout(
+  reservationId: string,
+  returnTo: CheckoutReturn,
+): Promise<{ url: string } | { error: string }> {
   const { data, error } = await createClient().functions.invoke("create-checkout", {
-    body: { reservation_id: reservationId, return_origin: window.location.origin },
+    body: { reservation_id: reservationId, return_origin: window.location.origin, return_to: returnTo },
   });
 
   if (error) return { error: await functionErrorMessage(error, "Plaćanje trenutno nije dostupno. Pokušajte ponovo.") };

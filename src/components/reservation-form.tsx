@@ -62,6 +62,8 @@ export function ReservationForm({
   tables,
   orderId,
   cartItems,
+  initialConfirmation = null,
+  initialError = null,
 }: {
   restaurant: Restaurant;
   hours: HoursRow[];
@@ -70,6 +72,10 @@ export function ReservationForm({
   tables: TableRow[];
   orderId: string | null;
   cartItems: CartItem[];
+  // Set when Stripe sends the customer back here after they paid for (or
+  // abandoned paying for) the reservation they just made - see the reserve page.
+  initialConfirmation?: string | null;
+  initialError?: string | null;
 }) {
   const [startsAt, setStartsAt] = useState("");
   const [partySize, setPartySize] = useState("2");
@@ -78,8 +84,8 @@ export function ReservationForm({
   const [selectedTableIds, setSelectedTableIds] = useState<string[]>([]);
   const [occupiedTableIds, setOccupiedTableIds] = useState<Set<string>>(new Set());
   const [sectionRemaining, setSectionRemaining] = useState<Map<string, number>>(new Map());
-  const [error, setError] = useState<string | null>(null);
-  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
+  const [confirmation, setConfirmation] = useState<string | null>(initialConfirmation);
   const [loading, setLoading] = useState(false);
 
   const effectiveStayMinutes = stayMinutes ? Number(stayMinutes) : restaurant.default_stay_minutes;
@@ -264,7 +270,7 @@ export function ReservationForm({
     setSelectedTableIds([]);
 
     if (cartItems.length > 0) {
-      const checkout = await startCheckout(data.id);
+      const checkout = await startCheckout(data.id, "reserve");
       if ("url" in checkout) {
         // Off to Stripe's hosted page; the button stays disabled until the page unloads.
         window.location.assign(checkout.url);

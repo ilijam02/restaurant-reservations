@@ -4,12 +4,26 @@ import { ReservationForm } from "@/components/reservation-form";
 import type { CartItem } from "@/components/cart-summary";
 import { createClient } from "@/lib/supabase/server";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Explicit timeZone, as everywhere else reservation times are shown: it's the
+// restaurant's local time, whatever timezone the server runs in.
+function formatReservationTime(iso: string) {
+  const date = new Date(iso);
+  const day = date.toLocaleDateString("sr-RS", { timeZone: "Europe/Belgrade" });
+  const time = date.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Belgrade" });
+  return `${day} u ${time}`;
+}
+
 export default async function ReserveRestaurantPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ payment?: string; reservation?: string }>;
 }) {
   const { id } = await params;
+  const { payment, reservation: returnedReservationId } = await searchParams;
   const supabase = await createClient();
 
   const { data: restaurant } = await supabase
@@ -66,6 +80,34 @@ export default async function ReserveRestaurantPage({
     .eq("restaurant_id", id)
     .maybeSingle();
 
+  // Stripe sends the customer back here (create-checkout's success/cancel URL)
+  // after they paid for - or backed out of paying for - the reservation they
+  // just made, so the page ends the way it does when there's no order: the plain
+  // form plus a message. Which reservation comes from the URL, so it's looked up
+  // (RLS scopes it to the caller's own) rather than trusted, and only used if it
+  // belongs to this restaurant. The webhook can land a moment after the redirect,
+  // so "received" is all the success text claims; the reservations list shows the
+  // actual payment status.
+  let initialConfirmation: string | null = null;
+  let initialError: string | null = null;
+  if ((payment === "success" || payment === "cancelled") && returnedReservationId && UUID_PATTERN.test(returnedReservationId)) {
+    const { data: returned } = await supabase
+      .from("reservations")
+      .select("starts_at")
+      .eq("id", returnedReservationId)
+      .eq("restaurant_id", id)
+      .maybeSingle();
+
+    if (returned) {
+      const when = formatReservationTime(returned.starts_at);
+      if (payment === "success") {
+        initialConfirmation = `Potvrđeno: rezervacija za ${when}. Hvala! Plaćanje je primljeno.`;
+      } else {
+        initialError = `Rezervacija za ${when} je potvrđena, ali plaćanje je otkazano. Porudžbinu možete platiti u "Moje rezervacije".`;
+      }
+    }
+  }
+
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center gap-6 p-6 pt-16">
       <AppHeader backHref={`/customer/restaurants/${id}`} />
@@ -78,6 +120,8 @@ export default async function ReserveRestaurantPage({
         tables={tables ?? []}
         orderId={draftOrder?.id ?? null}
         cartItems={(draftOrder?.items as unknown as CartItem[] | undefined) ?? []}
+        initialConfirmation={initialConfirmation}
+        initialError={initialError}
       />
     </main>
   );

@@ -336,9 +336,6 @@ function ReservationCard({
             </button>
           )}
           {cancelledNote && <span className="text-sm text-stone-600 dark:text-stone-400">{cancelledNote}</span>}
-          {showPayment && paymentStatus && (
-            <span className={`text-sm font-medium ${PAYMENT_CLASSES[paymentStatus]}`}>{PAYMENT_STATUS_LABELS[paymentStatus]}</span>
-          )}
           {canPay && (
             <button
               type="button"
@@ -368,6 +365,13 @@ function ReservationCard({
             >
               {cancelling ? "Otkazivanje..." : "Otkaži rezervaciju"}
             </button>
+          )}
+          {/* Last in the row with ml-auto, so it sits in the card's bottom-right
+              corner (above the expanded order, which is a separate block below). */}
+          {showPayment && paymentStatus && (
+            <span className={`ml-auto text-sm font-medium ${PAYMENT_CLASSES[paymentStatus]}`}>
+              {PAYMENT_STATUS_LABELS[paymentStatus]}
+            </span>
           )}
         </div>
       )}
@@ -453,7 +457,7 @@ export function ReservationsList({
     setErrors((previous) => ({ ...previous, [reservation.id]: "" }));
     setBusyId(reservation.id);
 
-    const checkout = await startCheckout(reservation.id);
+    const checkout = await startCheckout(reservation.id, "reservations");
     if ("url" in checkout) {
       // Off to Stripe's hosted page; busy stays set until the page unloads.
       window.location.assign(checkout.url);

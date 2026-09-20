@@ -21,8 +21,12 @@ Deno.serve(async (req) => {
     const caller = await callerClient(req);
     if (!caller) return json({ error: "Niste prijavljeni." }, 401);
 
-    const { reservation_id: reservationId, return_origin: returnOrigin } = await req.json();
-    if (typeof reservationId !== "string" || !allowedOrigins().includes(returnOrigin)) {
+    const { reservation_id: reservationId, return_origin: returnOrigin, return_to: returnTo } = await req.json();
+    if (
+      typeof reservationId !== "string" ||
+      !allowedOrigins().includes(returnOrigin) ||
+      (returnTo !== "reserve" && returnTo !== "reservations")
+    ) {
       return json({ error: "Neispravan zahtev." }, 400);
     }
 
@@ -31,7 +35,7 @@ Deno.serve(async (req) => {
     // The amount comes from here, never from the request.
     const { data: order, error: orderError } = await caller.client
       .from("orders")
-      .select("id, payment_status, stripe_checkout_session_id, restaurants(name), order_items(unit_price, quantity)")
+      .select("id, restaurant_id, payment_status, stripe_checkout_session_id, restaurants(name), order_items(unit_price, quantity)")
       .eq("reservation_id", reservationId)
       .eq("customer_id", caller.user.id)
       .eq("status", "confirmed")
@@ -78,6 +82,13 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Right after booking, the customer is sent back to that restaurant's
+    // reservation page (where they were, as when there's no order); paying an
+    // older order from "Moje rezervacije" returns there instead.
+    const returnPath =
+      returnTo === "reserve" ? `/customer/restaurants/${order.restaurant_id}/reserve` : "/customer/reservations";
+    const returnQuery = returnTo === "reserve" ? `&reservation=${reservationId}` : "";
+
     const restaurantName = (order.restaurants as unknown as { name: string } | null)?.name ?? "Restoran";
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -103,8 +114,8 @@ Deno.serve(async (req) => {
       // The shortest a Checkout Session may live; an abandoned one then stops
       // being payable instead of lingering.
       expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
-      success_url: `${returnOrigin}/customer/reservations?payment=success`,
-      cancel_url: `${returnOrigin}/customer/reservations?payment=cancelled`,
+      success_url: `${returnOrigin}${returnPath}?payment=success${returnQuery}`,
+      cancel_url: `${returnOrigin}${returnPath}?payment=cancelled${returnQuery}`,
     });
 
     const { error: rpcError } = await admin.rpc("set_order_checkout_session", {
