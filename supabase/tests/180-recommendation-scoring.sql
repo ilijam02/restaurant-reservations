@@ -18,9 +18,9 @@
 --   cold     has no history at all
 -- Then, for the edge cases, viewer / booker / loner / hub / edge join in, and
 -- `live` (events relative to the real now(), for the tests of the public wrapper) and
--- victim / real1 / real2 / sy1..sy6 (an isolated throwaway-account attack, below).
+-- victim / real1 / real2 / sy1..sy6 / niche / fake1 / fake2 (isolated throwaway-account attacks, below).
 begin;
-select plan(58);
+select plan(61);
 
 select tests.create_supabase_user('owner_u', 'owneru@test.com', null,
   '{"first_name":"Owner","last_name":"U","phone":"555-0071","role":"owner"}'::jsonb);
@@ -66,6 +66,12 @@ select tests.create_supabase_user('sy5', 'sy5@test.com', null,
   '{"first_name":"sy5","last_name":"S","phone":"555-0091","role":"customer"}'::jsonb);
 select tests.create_supabase_user('sy6', 'sy6@test.com', null,
   '{"first_name":"sy6","last_name":"S","phone":"555-0092","role":"customer"}'::jsonb);
+select tests.create_supabase_user('niche', 'niche@test.com', null,
+  '{"first_name":"niche","last_name":"S","phone":"555-0093","role":"customer"}'::jsonb);
+select tests.create_supabase_user('fake1', 'fake1@test.com', null,
+  '{"first_name":"fake1","last_name":"S","phone":"555-0094","role":"customer"}'::jsonb);
+select tests.create_supabase_user('fake2', 'fake2@test.com', null,
+  '{"first_name":"fake2","last_name":"S","phone":"555-0095","role":"customer"}'::jsonb);
 
 select set_config('tests.as_of', '2026-09-20 12:00:00+00', true);
 
@@ -184,7 +190,7 @@ select is(
 -- catches a wrong similarity weighting, a missing norm or a lost penalty.
 select is(
   (select (array_agg(round(s.score, 4) order by s.rank))[1:6] from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s),
-  array[1.0000, 0.4258, 0.1329, 0.1197, 0.0663, 0.0281]::numeric[],
+  array[1.0000, 0.4257, 0.1329, 0.1197, 0.0663, 0.0281]::numeric[],
   'Ana''s six best scores (demo profile)'
 );
 select is(
@@ -235,7 +241,7 @@ select is(
 );
 select is(
   (select (array_agg(round(s.score, 4) order by s.rank))[1:6] from public.recommendation_scores(tests.get_supabase_uid('ana'), 'realistic', current_setting('tests.as_of')::timestamptz) s),
-  array[1.0000, 0.5662, 0.3764, 0.3334, 0.1580, 0.1482]::numeric[],
+  array[1.0000, 0.5680, 0.3764, 0.3327, 0.1580, 0.1482]::numeric[],
   'Ana''s six best scores (realistic profile: slower decay, more neighbors)'
 );
 select throws_ok(
@@ -441,8 +447,9 @@ select ok(
   'the demo profile (k = 4) never counts more than 4 neighbors at a restaurant'
 );
 select ok(
-  (select max(similar_users) > 4 from public.recommendation_scores(tests.get_supabase_uid('hub'), 'realistic', current_setting('tests.as_of')::timestamptz)),
-  'the realistic profile (k = 30) consults more of the hub''s many neighbors'
+  (select max(similar_users) from public.recommendation_scores(tests.get_supabase_uid('hub'), 'realistic', current_setting('tests.as_of')::timestamptz))
+    > (select max(similar_users) from public.recommendation_scores(tests.get_supabase_uid('hub'), 'demo', current_setting('tests.as_of')::timestamptz)),
+  'the realistic profile (k = 30) consults more of the hub''s neighbors than the demo one (k = 4)'
 );
 
 -- === "Been there" means a booking ===
@@ -468,20 +475,33 @@ select ok(
   'a restaurant the customer only favorited or viewed is not penalized as a repeat visit'
 );
 
--- === Throwaway accounts cannot crowd out or outweigh real neighbors ===
--- An isolated scenario on four restaurants of its own (Sibil X/Y/Z/T):
+-- === Throwaway accounts cannot be "someone like you" ===
+-- Only customers who have actually booked somewhere can count as similar to
+-- someone. Page views and favorites are free to fake, a real booking is not, so
+-- accounts made of nothing else must never become neighbors. Three attacks, on
+-- restaurants of their own (Sibil X/Y/Z/T/D/N):
 --   victim   booked X (5 days ago) and Y (10)
 --   real1    booked X (4) and Z (2);   real2  booked Y (8) and Z (3)
---   sy1-sy4  a single page view of X each, yesterday: the cheapest possible
---            accounts. Without evidence weighting their one-item vectors point
---            exactly like the victim's X, so they look MORE similar than the
---            real neighbors and (k = 4) fill the top-k on their own.
---   sy5-sy6  favorite X and the target T: try to steer the victim toward T.
--- Z is what the two real neighbors booked: the honest recommendation.
+--   Z is what the two real neighbors booked: the honest recommendation.
+-- 1. Crowding out. sy1-sy4: one page view of X each, yesterday. Their one-item
+--    vectors point exactly like the victim's X, so under plain cosine similarity
+--    they look MORE similar than the real neighbors and (k = 4) fill the top-k.
+-- 2. Steering. sy5-sy6 favorite four restaurants each: X, Y (the victim's two),
+--    the target T and a decoy D. Enough to beat a defense that only shrinks
+--    similarity by how much free evidence an account has (its "evidence" grows
+--    with every favorite).
+-- 3. An upcoming booking is free too. fake2 has a confirmed booking at X two days
+--    from now (create_reservation() is open to any customer account, and it can
+--    be cancelled afterwards) plus a favorite at T. Only a COMPLETED booking
+--    makes an account eligible, so it must not count either.
+-- 4. A lone fake neighbor. niche booked only N, which nobody else touched;
+--    fake1 views N and favorites T. Without a booking requirement fake1 is
+--    niche's ONLY neighbor, its pick T gets the whole neighbor score and
+--    niche's personalization is at full strength.
 -- FIXTURE-SYBIL-BEGIN
 insert into public.restaurants (owner_id, name, capacity)
   select tests.get_supabase_uid('owner_u'), n, 30
-  from unnest(array['Sibil X', 'Sibil Y', 'Sibil Z', 'Sibil T']) as n;
+  from unnest(array['Sibil X', 'Sibil Y', 'Sibil Z', 'Sibil T', 'Sibil D', 'Sibil N']) as n;
 
 insert into public.reservations (restaurant_id, customer_id, party_size, starts_at, ends_at, status)
   select r.id, tests.get_supabase_uid(b.who), 2,
@@ -491,19 +511,29 @@ insert into public.reservations (restaurant_id, customer_id, party_size, starts_
   from (values
     ('victim', 'Sibil X', 5), ('victim', 'Sibil Y', 10),
     ('real1', 'Sibil X', 4), ('real1', 'Sibil Z', 2),
-    ('real2', 'Sibil Y', 8), ('real2', 'Sibil Z', 3)
+    ('real2', 'Sibil Y', 8), ('real2', 'Sibil Z', 3),
+    ('niche', 'Sibil N', 3)
   ) as b(who, rest, days_ago)
   join public.restaurants r on r.name = b.rest;
 
+insert into public.reservations (restaurant_id, customer_id, party_size, starts_at, ends_at, status)
+  select r.id, tests.get_supabase_uid('fake2'), 2,
+         current_setting('tests.as_of')::timestamptz + interval '2 days', current_setting('tests.as_of')::timestamptz + interval '2 days 90 minutes', 'confirmed'
+  from public.restaurants r where r.name = 'Sibil X';
+
 insert into public.restaurant_views (user_id, restaurant_id, view_count, last_viewed_at)
   select tests.get_supabase_uid(w.who), r.id, 1, current_setting('tests.as_of')::timestamptz - interval '1 day'
-  from (values ('sy1'), ('sy2'), ('sy3'), ('sy4')) as w(who)
-  join public.restaurants r on r.name = 'Sibil X';
+  from (values ('sy1', 'Sibil X'), ('sy2', 'Sibil X'), ('sy3', 'Sibil X'), ('sy4', 'Sibil X'), ('fake1', 'Sibil N')) as w(who, rest)
+  join public.restaurants r on r.name = w.rest;
 
 insert into public.favorites (user_id, restaurant_id, created_at)
   select tests.get_supabase_uid(w.who), r.id, current_setting('tests.as_of')::timestamptz - interval '1 day'
-  from (values ('sy5'), ('sy6')) as w(who)
-  join public.restaurants r on r.name in ('Sibil X', 'Sibil T');
+  from (values
+    ('sy5', 'Sibil X'), ('sy5', 'Sibil Y'), ('sy5', 'Sibil T'), ('sy5', 'Sibil D'),
+    ('sy6', 'Sibil X'), ('sy6', 'Sibil Y'), ('sy6', 'Sibil T'), ('sy6', 'Sibil D'),
+    ('fake1', 'Sibil T'), ('fake2', 'Sibil T')
+  ) as w(who, rest)
+  join public.restaurants r on r.name = w.rest;
 -- FIXTURE-SYBIL-END
 
 select is(
@@ -511,7 +541,7 @@ select is(
    from public.recommendation_scores(tests.get_supabase_uid('victim'), 'demo', current_setting('tests.as_of')::timestamptz) s
    join public.restaurants r on r.id = s.restaurant_id where r.name = 'Sibil Z'),
   2,
-  'both real neighbors still count at Z: the four one-view accounts did not fill the top-k (without evidence weighting Z has 0 neighbors)'
+  'both real neighbors still count at Z: the four one-view accounts did not crowd them out of the top-k (with plain similarity Z has 0 neighbors)'
 );
 select ok(
   (select (select s.rank from public.recommendation_scores(tests.get_supabase_uid('victim'), 'demo', current_setting('tests.as_of')::timestamptz) s
@@ -521,13 +551,32 @@ select ok(
   'what the real neighbors booked (Z) ranks above the restaurant the favorite-only accounts are pushing (T)'
 );
 select is(
+  (select s.similar_users
+   from public.recommendation_scores(tests.get_supabase_uid('victim'), 'demo', current_setting('tests.as_of')::timestamptz) s
+   join public.restaurants r on r.id = s.restaurant_id where r.name = 'Sibil T'),
+  0,
+  'no account without a completed booking is a neighbor - not with four favorites, not with an upcoming booking: nobody counts as similar to the victim at T'
+);
+select is(
+  (select max(personalization)
+   from public.recommendation_scores(tests.get_supabase_uid('niche'), 'demo', current_setting('tests.as_of')::timestamptz)),
+  0::numeric,
+  'a customer whose only "neighbor" would be a fake gets no neighbor-driven ranking at all (personalization 0), not a fake at full strength'
+);
+select is(
+  (select max(knn_score)
+   from public.recommendation_scores(tests.get_supabase_uid('niche'), 'demo', current_setting('tests.as_of')::timestamptz)),
+  0::numeric,
+  'and the fake''s favorite (T) gets no neighbor score'
+);
+select is(
   (select array_agg(round(x.score, 4) order by x.name)
    from (select r.name, s.score
          from public.recommendation_scores(tests.get_supabase_uid('victim'), 'demo', current_setting('tests.as_of')::timestamptz) s
          join public.restaurants r on r.id = s.restaurant_id
          where r.name in ('Sibil X', 'Sibil Y', 'Sibil Z', 'Sibil T')) x),
-  array[0.3464, 0.7094, 0.2325, 0.8828]::numeric[],
-  'the victim''s scores at T, X, Y, Z (in name order) - pinned, so any change to how evidence weights similarity shows up'
+  array[0.1121, 0.4839, 0.2856, 0.8828]::numeric[],
+  'the victim''s scores at T, X, Y, Z (in name order) - pinned, so any change to who counts as a neighbor shows up'
 );
 
 -- === Who may call what ===
