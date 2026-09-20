@@ -12,6 +12,7 @@ import { SectionsEditor, type DraftSection } from "@/components/sections-editor"
 import { LayoutsEditor, type DraftLayout } from "@/components/layouts-editor";
 import { TableLayoutEditor, type DraftTable } from "@/components/table-layout-editor";
 import { computeCapacitySums } from "@/lib/capacity-cascade";
+import { isRestaurantNameTaken, RESTAURANT_NAME_TAKEN_ERROR } from "@/lib/restaurant-name";
 
 type Restaurant = {
   id: string;
@@ -401,7 +402,13 @@ export function EditRestaurantForm({
       // location ones too), so tell them apart by constraint name.
       const isStayMinutesViolation =
         restaurantError.code === "23514" && restaurantError.message.includes("restaurants_default_stay_minutes_range");
-      setError(isStayMinutesViolation ? DEFAULT_STAY_MINUTES_RANGE_ERROR : SAVE_ERROR);
+      setError(
+        isStayMinutesViolation
+          ? DEFAULT_STAY_MINUTES_RANGE_ERROR
+          : isRestaurantNameTaken(restaurantError)
+            ? RESTAURANT_NAME_TAKEN_ERROR
+            : SAVE_ERROR,
+      );
       return;
     }
 
