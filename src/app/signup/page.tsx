@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { describeAuthError } from "@/lib/auth/auth-errors";
 import type { Role } from "@/lib/auth/redirect";
 import {
   validateEmail,
@@ -95,7 +96,11 @@ export default function SignupPage() {
 
     setLoading(false);
     if (error) {
-      setError("Registracija nije uspela. Proverite podatke i pokušajte ponovo.");
+      // A specific reason when Auth gave one (email already registered, address
+      // refused, weak password, rate limit); the generic line otherwise.
+      const info = describeAuthError(error);
+      if (info?.field) setFieldErrors({ [info.field]: info.message });
+      else setError(info?.message ?? "Registracija nije uspela. Proverite podatke i pokušajte ponovo.");
       return;
     }
 

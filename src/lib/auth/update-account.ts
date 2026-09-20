@@ -1,6 +1,8 @@
 "use server";
 
+import { describeAuthError } from "@/lib/auth/auth-errors";
 import { releaseVerifier, verifyPassword } from "@/lib/auth/verify-password";
+import { updateUserEmailAsAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { validateAccountForm, type AccountFieldErrors, type AccountFormInput } from "@/lib/validation";
 
@@ -13,8 +15,8 @@ export type UpdateAccountResult =
   | { ok: false; error?: string; errors?: AccountFieldErrors; authChanged?: boolean };
 
 const SAVE_FAILED_ERROR = "Čuvanje izmena nije uspelo. Pokušajte ponovo.";
-const RATE_LIMITED_ERROR = "Previše pokušaja. Pokušajte ponovo za nekoliko minuta.";
 const WRONG_PASSWORD_ERROR = "Pogrešna lozinka.";
+const EMAIL_UNAVAILABLE_ERROR = "Promena emaila trenutno nije dostupna. Pokušajte ponovo kasnije.";
 
 // A Server Action is a public POST endpoint, so its argument is untrusted
 // whatever the form sends: anything that isn't a string counts as empty.
@@ -44,10 +46,15 @@ function sanitize(input: unknown): AccountFormInput {
 // the profile row. So a refused email leaves nothing half-saved; the reverse
 // failure (auth changed, profile write failed) is reported as such.
 //
-// The auth change goes through the verifier's fresh session rather than the
-// cookie session: Supabase's "secure password change" wants a recent sign-in,
-// which a months-old cookie session isn't, and the cookie session is left
-// untouched (a password change doesn't sign out the user's other sessions).
+// Two ways to change the auth side, neither of which sends an email:
+//  - a password-only change goes through the verifier's fresh session rather
+//    than the cookie session: Supabase's "secure password change" wants a recent
+//    sign-in, which a months-old cookie session isn't, and the cookie session is
+//    left untouched (other sessions stay signed in);
+//  - an email change (with the new password in the same call, if any) is applied
+//    directly by the admin API (see updateUserEmailAsAdmin()), because Auth's own
+//    email change sends confirmation messages the app doesn't want, is capped at
+//    a few an hour, and only takes effect once a link is clicked.
 export async function updateAccountAction(rawInput: AccountFormInput): Promise<UpdateAccountResult> {
   const input = sanitize(rawInput);
 
@@ -77,7 +84,6 @@ export async function updateAccountAction(rawInput: AccountFormInput): Promise<U
     return { ok: true, message: "Nema izmena za čuvanje." };
   }
 
-  let pendingEmail: string | null = null;
   let authChanged = false;
 
   if (changes.needsCurrentPassword) {
@@ -85,15 +91,22 @@ export async function updateAccountAction(rawInput: AccountFormInput): Promise<U
     if (!verifier) return { ok: false, errors: { currentPassword: WRONG_PASSWORD_ERROR } };
 
     try {
-      if (changes.email || changes.password) {
-        const { data, error } = await verifier.auth.updateUser({
-          ...(changes.email ? { email: values.email } : {}),
+      if (changes.email) {
+        // user.id is the server-verified session's, never the request's.
+        const result = await updateUserEmailAsAdmin(user.id, {
+          email: values.email,
           ...(changes.password ? { password: input.newPassword } : {}),
         });
+        if (!result.ok && "unavailable" in result) {
+          console.error("updateAccountAction: SUPABASE_SERVICE_ROLE_KEY is not set, so the email can't be changed");
+          return { ok: false, error: EMAIL_UNAVAILABLE_ERROR };
+        }
+        if (!result.ok) return mapAuthError(result.error);
+        authChanged = true;
+      } else if (changes.password) {
+        const { error } = await verifier.auth.updateUser({ password: input.newPassword });
         if (error) return mapAuthError(error);
         authChanged = true;
-        // With "Confirm email" on, the address only changes once confirmed.
-        if (changes.email && data.user?.new_email) pendingEmail = data.user.new_email;
       }
     } finally {
       await releaseVerifier(verifier);
@@ -120,30 +133,20 @@ export async function updateAccountAction(rawInput: AccountFormInput): Promise<U
     }
   }
 
-  return {
-    ok: true,
-    message: pendingEmail
-      ? `Izmene su sačuvane. Poslali smo poruku za potvrdu na ${pendingEmail} - email će biti promenjen tek kada je potvrdite.`
-      : "Izmene su sačuvane.",
-  };
+  return { ok: true, message: "Izmene su sačuvane." };
 }
 
-// Auth's own error codes (https://supabase.com/docs/guides/auth/debugging/error-codes).
+// The shared describeAuthError() knows the codes worth a specific message; its
+// "password" field is this form's new-password input. Anything else is logged
+// (code and status only - the message can contain the address) and shown as the
+// generic failure.
 function mapAuthError(error: { code?: string; status?: number }): UpdateAccountResult {
-  switch (error.code) {
-    case "email_exists":
-    case "user_already_exists":
-      return { ok: false, errors: { email: "Ovaj email je već u upotrebi." } };
-    case "email_address_invalid":
-      return { ok: false, errors: { email: "Ovaj email nije prihvaćen. Probajte drugi." } };
-    case "same_password":
-      return { ok: false, errors: { newPassword: "Nova lozinka mora da se razlikuje od trenutne." } };
-    case "weak_password":
-      return { ok: false, errors: { newPassword: "Lozinka je previše slaba. Izaberite drugu." } };
-    case "over_request_rate_limit":
-    case "over_email_send_rate_limit":
-      return { ok: false, error: RATE_LIMITED_ERROR };
-    default:
-      return { ok: false, error: error.status === 429 ? RATE_LIMITED_ERROR : SAVE_FAILED_ERROR };
+  const info = describeAuthError(error);
+  if (!info) {
+    console.error("updateAccountAction: auth update failed", { code: error.code, status: error.status });
+    return { ok: false, error: SAVE_FAILED_ERROR };
   }
+  if (info.field === "email") return { ok: false, errors: { email: info.message } };
+  if (info.field === "password") return { ok: false, errors: { newPassword: info.message } };
+  return { ok: false, error: info.message };
 }
