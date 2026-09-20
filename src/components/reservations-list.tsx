@@ -19,7 +19,9 @@ const CANCELLABLE_STATUSES: ReservationStatus[] = ["confirmed", "preparing_order
 
 export type ReservationRow = {
   id: string;
-  customer_id: string;
+  // Null once the customer has deleted their account (the booking stays,
+  // anonymized - see 20260919200000_account_deletion.sql).
+  customer_id: string | null;
   // Set by cancel_reservation() (see 20260919110000_cancel_reservation_audit.sql);
   // null on anything not cancelled, and on cancellations from before it existed.
   cancelled_by: string | null;

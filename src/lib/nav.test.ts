@@ -22,6 +22,13 @@ describe("menuItemsForPath", () => {
     expect(menuItemsForPath("/owner/reservations").map((i) => i.href)).toContain("/owner/reservations");
   });
 
+  it("ends every role's menu with its own Moj nalog page", () => {
+    for (const role of ["customer", "employee", "owner"]) {
+      const items = menuItemsForPath(`/${role}`);
+      expect(items[items.length - 1]).toEqual({ label: "Moj nalog", href: `/${role}/account` });
+    }
+  });
+
   it("gives customers a Mapa entry right after Početna", () => {
     expect(menuItemsForPath("/customer")[1]).toEqual({ label: "Mapa", href: "/customer/map" });
   });
