@@ -4,9 +4,11 @@
 --   payment-state functions (set_order_checkout_session / mark_order_paid /
 --   mark_order_refunded) are executable by service_role only - i.e. by the
 --   Edge Functions, never by a signed-in user;
--- * mark_order_paid() is idempotent, ignores a session that isn't the order's
---   current one, and turns a payment that lands after the order was cancelled
---   into a pending refund;
+-- * mark_order_paid() is idempotent, reports a second, different payment for an
+--   already-paid order as a duplicate (the webhook refunds it), and turns a
+--   payment that lands after the order was cancelled into a pending refund;
+-- * a pending refund blocks deleting the account or restaurant that could
+--   retry it (delete_my_account / delete_restaurant);
 -- * cancel_reservation() applies the refund policy in the same transaction:
 --   the restaurant's owner cancelling always queues a refund of a paid order;
 --   a customer cancelling queues it only while the reservation is still
@@ -23,7 +25,7 @@
 --                       payment lands late -> refund_pending -> refunded
 -- Every order is given a checkout session first, as create-checkout would.
 begin;
-select plan(20);
+select plan(25);
 
 select tests.create_supabase_user('owner_h', 'ownerh@test.com', null,
   '{"first_name":"Owner","last_name":"H","phone":"555-0041","role":"owner"}'::jsonb);
@@ -102,11 +104,11 @@ select is(
   'a repeated webhook for R1 is a no-op that reports the current state'
 );
 select is(
-  (select public.mark_order_paid(o.id, 'cs_some_old_session', 'pi_x') from public.orders o
+  (select public.mark_order_paid(o.id, 'cs_second_session', 'pi_second') from public.orders o
     join public.reservations r on r.id = o.reservation_id
-    where r.party_size = 4 and r.restaurant_id = (select id from public.restaurants where name = 'Pay Kapacitet')),
-  null,
-  'a session that is not the order''s current one is ignored (null), R4 stays unpaid'
+    where r.party_size = 1 and r.restaurant_id = (select id from public.restaurants where name = 'Pay Kapacitet')),
+  'duplicate',
+  'a second, different payment for an already-paid order is reported as a duplicate (the webhook refunds it); R4 stays unpaid'
 );
 
 -- R2 and R3 are now being prepared by the kitchen.
@@ -205,6 +207,43 @@ select throws_ok(
   '42501',
   null,
   'an authenticated user cannot write payment_status'
+);
+select throws_ok(
+  $$select public.set_order_checkout_session(gen_random_uuid(), 'cs_x')$$,
+  '42501',
+  null,
+  'an authenticated user cannot call set_order_checkout_session'
+);
+select throws_ok(
+  $$select public.mark_order_refunded(gen_random_uuid())$$,
+  '42501',
+  null,
+  'an authenticated user cannot call mark_order_refunded'
+);
+
+-- === A pending refund blocks deleting the account / restaurant that could retry it ===
+-- customer_7 still has R1 in refund_pending; owner_h's restaurant has R1 and R3.
+select throws_ok(
+  $$select public.delete_my_account()$$,
+  'P0001',
+  'Imate povraćaj novca koji je u toku. Završite ga (dugme "Ponovi povraćaj novca" na listi rezervacija), pa pokušajte ponovo.',
+  'customer_7 cannot delete their account while a refund is pending'
+);
+
+select tests.authenticate_as('owner_h');
+select throws_ok(
+  $$select public.delete_restaurant((select id from public.restaurants where name = 'Pay Kapacitet'))$$,
+  'P0001',
+  'Restoran ima povraćaje novca koji su u toku. Završite ih (dugme "Ponovi povraćaj novca" na listi rezervacija), pa pokušajte ponovo.',
+  'owner_h cannot delete a restaurant while a refund is pending'
+);
+
+select tests.clear_authentication();
+select throws_ok(
+  $$select public.mark_order_paid(gen_random_uuid(), 'cs_x', 'pi_x')$$,
+  '42501',
+  null,
+  'an unauthenticated (anon) caller cannot call mark_order_paid'
 );
 
 select * from finish();

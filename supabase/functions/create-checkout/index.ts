@@ -35,7 +35,9 @@ Deno.serve(async (req) => {
     // The amount comes from here, never from the request.
     const { data: order, error: orderError } = await caller.client
       .from("orders")
-      .select("id, restaurant_id, payment_status, stripe_checkout_session_id, restaurants(name), order_items(unit_price, quantity)")
+      .select(
+        "id, restaurant_id, payment_status, stripe_checkout_session_id, restaurants(name), reservations(status, ends_at), order_items(unit_price, quantity)",
+      )
       .eq("reservation_id", reservationId)
       .eq("customer_id", caller.user.id)
       .eq("status", "confirmed")
@@ -45,6 +47,19 @@ Deno.serve(async (req) => {
     if (orderError) throw orderError;
     if (!order) return json({ error: "Porudžbina ne postoji." }, 404);
     if (order.payment_status !== "unpaid") return json({ error: "Porudžbina je već plaćena." }, 409);
+
+    // Payable only while the reservation can still be cancelled (the states
+    // cancel_reservation() accepts): money paid on a no-show / completed /
+    // expired reservation could never be refunded. The UI already hides the
+    // button; this is the server's own rule.
+    const reservation = order.reservations as unknown as { status: string; ends_at: string } | null;
+    if (
+      !reservation ||
+      !["confirmed", "preparing_order", "order_prepared"].includes(reservation.status) ||
+      new Date(reservation.ends_at).getTime() <= Date.now()
+    ) {
+      return json({ error: "Rezervacija više nije aktivna, pa se porudžbina ne može platiti." }, 409);
+    }
 
     const items = (order.order_items ?? []) as { unit_price: number; quantity: number }[];
     if (items.length === 0) return json({ error: "Porudžbina je prazna." }, 400);
@@ -111,9 +126,11 @@ Deno.serve(async (req) => {
       adaptive_pricing: { enabled: false },
       client_reference_id: order.id,
       metadata: { order_id: order.id, reservation_id: reservationId },
-      // The shortest a Checkout Session may live; an abandoned one then stops
-      // being payable instead of lingering.
-      expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+      // Stripe's minimum lifetime is 30 minutes, measured when *it* receives the
+      // request - so a few minutes of margin, or latency could put this just
+      // under the minimum and fail every checkout. An abandoned session then
+      // stops being payable instead of lingering.
+      expires_at: Math.floor(Date.now() / 1000) + 35 * 60,
       success_url: `${returnOrigin}${returnPath}?payment=success${returnQuery}`,
       cancel_url: `${returnOrigin}${returnPath}?payment=cancelled${returnQuery}`,
     });

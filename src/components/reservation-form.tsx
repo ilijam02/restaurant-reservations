@@ -432,7 +432,8 @@ export function ReservationForm({
             <h3 className="text-sm font-medium">Plaćanje karticom</h3>
             <p className="text-sm text-stone-600 dark:text-stone-400">
               Nakon potvrde rezervacije bićete preusmereni na Stripe stranicu za plaćanje. Ovo je test režim - novac se
-              ne naplaćuje, koristite test karticu 4242 4242 4242 4242.
+              ne naplaćuje, koristite test karticu 4242 4242 4242 4242. Iznos se na Stripe stranici prikazuje u evrima
+              po fiksnom kursu (1 EUR = 117 RSD).
             </p>
           </div>
         )}

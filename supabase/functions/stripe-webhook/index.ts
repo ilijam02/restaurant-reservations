@@ -1,6 +1,6 @@
-import Stripe from "npm:stripe@^22";
+import Stripe from "npm:stripe@22.6.2";
 import { adminClient, stripeClient } from "../_shared/clients.ts";
-import { refundOrder } from "../_shared/refund.ts";
+import { refundOrder, refundStrayPayment } from "../_shared/refund.ts";
 
 // Stripe calls this, not a signed-in user, so it runs with verify_jwt = false
 // (config.toml); the Stripe-Signature header is the authentication. The body
@@ -42,8 +42,12 @@ Deno.serve(async (req) => {
         // A non-2xx makes Stripe retry, which is what we want for a transient failure.
         if (error) throw error;
 
-        if (state === null) {
-          console.warn(`checkout session ${session.id} is not the current session of order ${orderId}`);
+        if ((state === null || state === "duplicate") && paymentIntentId) {
+          // Money taken with nothing to attach it to: the order was already paid
+          // by another payment (two Checkout sessions both completed), or doesn't
+          // exist. Give it back rather than keep it.
+          console.warn(`refunding stray payment ${paymentIntentId} for order ${orderId} (${state ?? "no such order"})`);
+          await refundStrayPayment(stripe, paymentIntentId);
         } else if (state === "refund_pending" && paymentIntentId) {
           // Paid after the order was cancelled - send the money straight back.
           await refundOrder(stripe, admin, orderId, paymentIntentId);

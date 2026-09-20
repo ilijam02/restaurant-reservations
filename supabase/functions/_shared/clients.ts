@@ -1,4 +1,4 @@
-import Stripe from "npm:stripe@^22";
+import Stripe from "npm:stripe@22.6.2";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 // STRIPE_SECRET_KEY must be a *test* key (sk_test_...): this app only ever
@@ -6,6 +6,11 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 export function stripeClient(): Stripe {
   const key = Deno.env.get("STRIPE_SECRET_KEY");
   if (!key) throw new Error("STRIPE_SECRET_KEY is not set");
+  // Enforced, not just documented: a live key here would charge real cards at
+  // the demo's fixed exchange rate.
+  if (!key.startsWith("sk_test_") && !key.startsWith("rk_test_")) {
+    throw new Error("STRIPE_SECRET_KEY must be a Stripe test-mode key");
+  }
   // The fetch client is what works in the Edge runtime (no Node http).
   return new Stripe(key, { httpClient: Stripe.createFetchHttpClient() });
 }

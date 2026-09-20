@@ -353,7 +353,7 @@ function ReservationCard({
               onClick={onRetryRefund}
               className="rounded-md border border-stone-300 px-3 py-1 text-sm hover:bg-stone-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-600 dark:hover:bg-stone-700"
             >
-              {busy ? "Povraćaj..." : "Pokušaj povraćaj ponovo"}
+              {busy ? "Povraćaj..." : "Ponovi povraćaj novca"}
             </button>
           )}
           {cancellable && (
@@ -426,10 +426,12 @@ export function ReservationsList({
       // user-facing Serbian; anything else (network, permission) isn't.
       const message = error.code === "P0001" ? error.message : "Otkazivanje nije uspelo. Pokušajte ponovo.";
       setErrors((previous) => ({ ...previous, [reservationId]: message }));
-    } else if (reservation.orders[0]?.payment_status === "paid") {
+    } else if (reservation.orders.length > 0) {
       // Cancelling only queues the refund (or not, per the refund policy in
-      // cancel_reservation()); this sends whatever was queued to Stripe. If it
-      // fails the order stays "refund pending" and the card offers a retry.
+      // cancel_reservation()); this sends whatever was queued to Stripe. It runs
+      // whenever there's an order, not only when this page's copy says "paid" -
+      // a payment can have landed since the list loaded. If it fails the order
+      // stays "refund pending" and the card offers a retry.
       const refunds = await requestRefunds();
       if ("error" in refunds || refunds.failed > 0) {
         setErrors((previous) => ({

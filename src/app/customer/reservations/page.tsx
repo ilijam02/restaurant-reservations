@@ -24,7 +24,8 @@ export default async function CustomerReservationsPage({
   searchParams: Promise<{ payment?: string }>;
 }) {
   const { payment } = await searchParams;
-  const banner = payment ? PAYMENT_BANNERS[payment] : undefined;
+  // hasOwn: the value is user-controlled, so "constructor" and friends must not match.
+  const banner = payment && Object.hasOwn(PAYMENT_BANNERS, payment) ? PAYMENT_BANNERS[payment] : undefined;
   const supabase = await createClient();
 
   // RLS scopes this to the caller's own reservations regardless of status
