@@ -1,11 +1,13 @@
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 // The ONLY place the service-role key is used. The key bypasses RLS entirely,
 // so it is never exposed as a general-purpose client: this module offers one
 // narrow operation, on a user id the caller has already established from the
-// signed-in session, and it must only be imported from Server Actions / server
-// code (never a Client Component). The key comes from a non-NEXT_PUBLIC
-// variable, so it can't be inlined into a browser bundle either.
+// signed-in session. The "server-only" import above makes the build fail if a
+// Client Component (directly or through anything it imports) ever reaches this
+// file - Next handles that import itself, no package needed. The key also comes
+// from a non-NEXT_PUBLIC variable, so it can't be inlined into a browser bundle.
 //
 // Why it exists: Supabase Auth's own email change (auth.updateUser({ email }))
 // sends confirmation messages, is capped at a few a hour by the built-in
@@ -22,8 +24,6 @@ export async function updateUserEmailAsAdmin(
   userId: string,
   changes: { email: string; password?: string },
 ): Promise<AdminUpdateResult> {
-  if (typeof window !== "undefined") throw new Error("The admin client must never run in the browser.");
-
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceRoleKey) return { ok: false, unavailable: true };
