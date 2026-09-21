@@ -29,19 +29,37 @@ export async function functionErrorMessage(error: unknown, fallback: string): Pr
   return fallback;
 }
 
-// Where Stripe sends the customer back to: the restaurant's reservation page
-// right after booking ("reserve"), or "Moje rezervacije" when paying an
-// existing order from there ("reservations").
-export type CheckoutReturn = "reserve" | "reservations";
+// What the customer wants booked - sent to Stripe's checkout instead of creating
+// the reservation, because a reservation with an order only comes into being once
+// its payment has succeeded (see create-checkout / stripe-webhook).
+export type BookingRequest = {
+  orderId: string;
+  restaurantId: string;
+  partySize: number;
+  startsAt: string;
+  stayMinutes: number | null;
+  sectionId: string | null;
+  tableIds: string[] | null;
+};
 
-// Creates a Stripe Checkout Session for the reservation's confirmed order. The
-// amount is computed by the function from the order, never sent from here.
-export async function startCheckout(
-  reservationId: string,
-  returnTo: CheckoutReturn,
-): Promise<{ url: string } | { error: string }> {
+// Pay first, book after: asks create-checkout to dry-run the booking and open a
+// Stripe Checkout Session for the draft order. No reservation is created here;
+// the amount is computed by the function from the order, never sent from here.
+// A refusal comes back as { error } with the booking rules' own Serbian message.
+export async function startCheckout(request: BookingRequest): Promise<{ url: string } | { error: string }> {
   const { data, error } = await createClient().functions.invoke("create-checkout", {
-    body: { reservation_id: reservationId, return_origin: window.location.origin, return_to: returnTo },
+    body: {
+      order_id: request.orderId,
+      return_origin: window.location.origin,
+      booking: {
+        restaurant_id: request.restaurantId,
+        party_size: request.partySize,
+        starts_at: request.startsAt,
+        stay_minutes: request.stayMinutes,
+        section_id: request.sectionId,
+        table_ids: request.tableIds,
+      },
+    },
   });
 
   if (error) return { error: await functionErrorMessage(error, "Plaćanje trenutno nije dostupno. Pokušajte ponovo.") };

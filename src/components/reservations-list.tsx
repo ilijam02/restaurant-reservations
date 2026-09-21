@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CartSummary, type CartItem } from "@/components/cart-summary";
-import { PAYMENT_STATUS_LABELS, requestRefunds, startCheckout, type PaymentStatus } from "@/lib/payments";
+import { PAYMENT_STATUS_LABELS, requestRefunds, type PaymentStatus } from "@/lib/payments";
 import { createClient } from "@/lib/supabase/client";
 
 type ReservationStatus = "confirmed" | "preparing_order" | "order_prepared" | "ongoing" | "cancelled" | "completed" | "no_show";
@@ -278,18 +278,16 @@ function ReservationCard({
   busy,
   error,
   onCancelRequest,
-  onPay,
   onRetryRefund,
 }: {
   reservation: ReservationRow;
   perspective: ReservationsPerspective;
   cancellable: boolean;
   cancelling: boolean;
-  // A payment or refund call for this card is in flight.
+  // A refund retry for this card is in flight.
   busy: boolean;
   error?: string;
   onCancelRequest: (reservation: ReservationRow) => void;
-  onPay: (reservation: ReservationRow) => void;
   onRetryRefund: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -300,9 +298,6 @@ function ReservationCard({
   const paymentStatus = order?.payment_status;
   // An unpaid order on a cancelled reservation has nothing to say about money.
   const showPayment = hasOrder && !!paymentStatus && (order.status === "confirmed" || paymentStatus !== "unpaid");
-  // Only the customer pays, and only while the reservation can still be
-  // cancelled (i.e. it hasn't started or ended).
-  const canPay = perspective === "customer" && hasOrder && order.status === "confirmed" && paymentStatus === "unpaid" && cancellable;
 
   return (
     <li className="rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-800">
@@ -336,16 +331,6 @@ function ReservationCard({
             </button>
           )}
           {cancelledNote && <span className="text-sm text-stone-600 dark:text-stone-400">{cancelledNote}</span>}
-          {canPay && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onPay(reservation)}
-              className="rounded-md bg-accent px-3 py-1 text-sm text-accent-foreground hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-800"
-            >
-              {busy ? "Preusmeravanje..." : "Plati porudžbinu"}
-            </button>
-          )}
           {paymentStatus === "refund_pending" && (
             <button
               type="button"
@@ -455,22 +440,6 @@ export function ReservationsList({
     handleCancel(reservation);
   }
 
-  async function handlePay(reservation: ReservationRow) {
-    setErrors((previous) => ({ ...previous, [reservation.id]: "" }));
-    setBusyId(reservation.id);
-
-    const checkout = await startCheckout(reservation.id, "reservations");
-    if ("url" in checkout) {
-      // Off to Stripe's hosted page; busy stays set until the page unloads.
-      window.location.assign(checkout.url);
-      return;
-    }
-
-    setBusyId(null);
-    setErrors((previous) => ({ ...previous, [reservation.id]: checkout.error }));
-    router.refresh();
-  }
-
   async function handleRetryRefund(reservationId: string) {
     setErrors((previous) => ({ ...previous, [reservationId]: "" }));
     setBusyId(reservationId);
@@ -508,7 +477,6 @@ export function ReservationsList({
         busy={busyId === reservation.id}
         error={errors[reservation.id]}
         onCancelRequest={setPendingCancel}
-        onPay={handlePay}
         onRetryRefund={() => handleRetryRefund(reservation.id)}
       />
     );

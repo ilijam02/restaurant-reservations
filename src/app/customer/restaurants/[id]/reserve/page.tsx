@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import type { PaymentReturn } from "@/components/payment-return-banner";
 import { ReservationForm } from "@/components/reservation-form";
 import type { CartItem } from "@/components/cart-summary";
 import { createClient } from "@/lib/supabase/server";
@@ -20,10 +21,10 @@ export default async function ReserveRestaurantPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ payment?: string; reservation?: string }>;
+  searchParams: Promise<{ payment?: string; order?: string }>;
 }) {
   const { id } = await params;
-  const { payment, reservation: returnedReservationId } = await searchParams;
+  const { payment, order: returnedOrderId } = await searchParams;
   const supabase = await createClient();
 
   const { data: restaurant } = await supabase
@@ -81,29 +82,45 @@ export default async function ReserveRestaurantPage({
     .maybeSingle();
 
   // Stripe sends the customer back here (create-checkout's success/cancel URL)
-  // after they paid for - or backed out of paying for - the reservation they
-  // just made, so the page ends the way it does when there's no order: the plain
-  // form plus a message. Which reservation comes from the URL, so it's looked up
-  // (RLS scopes it to the caller's own) rather than trusted, and only used if it
-  // belongs to this restaurant. The webhook can land a moment after the redirect,
-  // so "received" is all the success text claims; the reservations list shows the
-  // actual payment status.
-  let initialConfirmation: string | null = null;
-  let initialError: string | null = null;
-  if ((payment === "success" || payment === "cancelled") && returnedReservationId && UUID_PATTERN.test(returnedReservationId)) {
+  // after they paid for - or backed out of paying for - the booking they asked
+  // for. The reservation exists only if the payment webhook has already created
+  // it, so what to say comes from the order's actual state, looked up under RLS
+  // (the caller's own orders only) rather than trusted from the URL:
+  //   confirmed        -> booked and paid
+  //   draft + failure  -> paid, but the booking couldn't be made (refunded)
+  //   draft + pending  -> paid, the webhook hasn't finished yet (the banner polls)
+  //   otherwise, if the customer backed out -> nothing was booked
+  let paymentReturn: PaymentReturn | null = null;
+  if ((payment === "success" || payment === "cancelled") && returnedOrderId && UUID_PATTERN.test(returnedOrderId)) {
     const { data: returned } = await supabase
-      .from("reservations")
-      .select("starts_at")
-      .eq("id", returnedReservationId)
+      .from("orders")
+      .select("status, booking_failure, pending_booking, reservations(starts_at)")
+      .eq("id", returnedOrderId)
       .eq("restaurant_id", id)
       .maybeSingle();
 
     if (returned) {
-      const when = formatReservationTime(returned.starts_at);
-      if (payment === "success") {
-        initialConfirmation = `Potvrđeno: rezervacija za ${when}. Hvala! Plaćanje je primljeno.`;
-      } else {
-        initialError = `Rezervacija za ${when} je potvrđena, ali plaćanje je otkazano. Porudžbinu možete platiti u "Moje rezervacije".`;
+      const reservation = returned.reservations as unknown as { starts_at: string } | null;
+      if (returned.status === "confirmed" && reservation) {
+        paymentReturn = {
+          kind: "success",
+          text: `Potvrđeno: rezervacija za ${formatReservationTime(reservation.starts_at)}. Hvala! Plaćanje je primljeno.`,
+        };
+      } else if (returned.booking_failure) {
+        paymentReturn = {
+          kind: "error",
+          text: `Rezervacija nije napravljena: ${returned.booking_failure} Novac će biti vraćen na karticu.`,
+        };
+      } else if (payment === "success" && returned.pending_booking) {
+        paymentReturn = {
+          kind: "processing",
+          text: "Plaćanje je primljeno. Rezervacija se upravo potvrđuje...",
+        };
+      } else if (payment === "cancelled") {
+        paymentReturn = {
+          kind: "info",
+          text: "Plaćanje je otkazano - rezervacija nije napravljena.",
+        };
       }
     }
   }
@@ -120,8 +137,7 @@ export default async function ReserveRestaurantPage({
         tables={tables ?? []}
         orderId={draftOrder?.id ?? null}
         cartItems={(draftOrder?.items as unknown as CartItem[] | undefined) ?? []}
-        initialConfirmation={initialConfirmation}
-        initialError={initialError}
+        paymentReturn={paymentReturn}
       />
     </main>
   );

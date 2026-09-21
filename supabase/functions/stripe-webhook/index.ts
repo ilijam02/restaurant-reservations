@@ -1,6 +1,6 @@
 import Stripe from "npm:stripe@22.6.2";
 import { adminClient, stripeClient } from "../_shared/clients.ts";
-import { refundOrder, refundStrayPayment } from "../_shared/refund.ts";
+import { refundStrayPayment } from "../_shared/refund.ts";
 
 // Stripe calls this, not a signed-in user, so it runs with verify_jwt = false
 // (config.toml); the Stripe-Signature header is the authentication. The body
@@ -34,7 +34,9 @@ Deno.serve(async (req) => {
         const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
         const admin = adminClient();
 
-        const { data: state, error } = await admin.rpc("mark_order_paid", {
+        // Pay first, book after: this is where the reservation is actually
+        // created, in one transaction with marking the order paid.
+        const { data: state, error } = await admin.rpc("finalize_paid_booking", {
           p_order_id: orderId,
           p_session_id: session.id,
           p_payment_intent_id: paymentIntentId ?? null,
@@ -42,15 +44,14 @@ Deno.serve(async (req) => {
         // A non-2xx makes Stripe retry, which is what we want for a transient failure.
         if (error) throw error;
 
-        if ((state === null || state === "duplicate") && paymentIntentId) {
-          // Money taken with nothing to attach it to: the order was already paid
-          // by another payment (two Checkout sessions both completed), or doesn't
-          // exist. Give it back rather than keep it.
-          console.warn(`refunding stray payment ${paymentIntentId} for order ${orderId} (${state ?? "no such order"})`);
+        if ((state === "failed" || state === "stray") && paymentIntentId) {
+          // Money taken but no reservation: the slot was taken while the customer
+          // paid, the cart changed, or nothing is waiting for this payment (a
+          // second Checkout session for a booking that already went through).
+          // Give it back rather than keep it. Retries of this webhook land here
+          // again and refund idempotently.
+          console.warn(`refunding payment ${paymentIntentId} for order ${orderId} (${state})`);
           await refundStrayPayment(stripe, paymentIntentId);
-        } else if (state === "refund_pending" && paymentIntentId) {
-          // Paid after the order was cancelled - send the money straight back.
-          await refundOrder(stripe, admin, orderId, paymentIntentId);
         }
       }
     }
