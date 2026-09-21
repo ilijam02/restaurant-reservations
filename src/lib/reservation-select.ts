@@ -12,7 +12,7 @@
 // themselves (archived restaurants' reservations drop out) instead of only
 // nulling the embed.
 function reservationListSelect(restaurantEmbed: string) {
-  return `id, customer_id, cancelled_by, party_size, starts_at, ends_at, status, ${restaurantEmbed}, reservation_tables(tables(name)), reservation_sections(party_size, sections(name)), orders(status, items:order_items(id, item_name, unit_price, quantity, choices:order_item_choices(option_name, choice_name, price_delta)))`;
+  return `id, customer_id, cancelled_by, party_size, starts_at, ends_at, status, ${restaurantEmbed}, reservation_tables(tables(name)), reservation_sections(party_size, sections(name)), orders(status, payment_status, items:order_items(id, item_name, unit_price, quantity, choices:order_item_choices(option_name, choice_name, price_delta)))`;
 }
 
 export const RESERVATION_LIST_SELECT = reservationListSelect("restaurants(name)");

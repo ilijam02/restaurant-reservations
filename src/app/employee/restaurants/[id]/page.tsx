@@ -36,7 +36,7 @@ export default async function EmployeeRestaurantReservationsPage({ params }: { p
   const { data: reservations } = await supabase
     .from("reservations")
     .select(
-      "id, party_size, starts_at, status, reservation_tables(tables(name)), reservation_sections(sections(name)), orders(status)",
+      "id, party_size, starts_at, status, reservation_tables(tables(name)), reservation_sections(sections(name)), orders(status, payment_status)",
     )
     .eq("restaurant_id", id)
     .in("status", ["confirmed", "preparing_order", "order_prepared", "ongoing"])

@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { TablePicker, type PickableTable } from "@/components/table-picker";
-import { CartSummary, cartTotal, formatPrice, type CartItem } from "@/components/cart-summary";
+import { CartSummary, type CartItem } from "@/components/cart-summary";
+import { PaymentReturnBanner, type PaymentReturn } from "@/components/payment-return-banner";
+import { startCheckout } from "@/lib/payments";
 
 type Restaurant = {
   id: string;
@@ -61,6 +63,7 @@ export function ReservationForm({
   tables,
   orderId,
   cartItems,
+  paymentReturn = null,
 }: {
   restaurant: Restaurant;
   hours: HoursRow[];
@@ -69,6 +72,11 @@ export function ReservationForm({
   tables: TableRow[];
   orderId: string | null;
   cartItems: CartItem[];
+  // What to tell the customer when Stripe has just sent them back here after they
+  // paid for (or backed out of paying for) a booking - shown where the
+  // confirmation of a booking without an order is, above the button. The reserve
+  // page works it out from the order's real state.
+  paymentReturn?: PaymentReturn | null;
 }) {
   const [startsAt, setStartsAt] = useState("");
   const [partySize, setPartySize] = useState("2");
@@ -80,6 +88,21 @@ export function ReservationForm({
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // The payment-return message belongs to the visit that came back from Stripe;
+  // starting a new booking replaces it with that booking's own messages.
+  const [returnDismissed, setReturnDismissed] = useState(false);
+
+  // Off to Stripe leaves the button in its "Obrada..." state on purpose (the page
+  // is about to unload). But the browser's Back button restores this page from
+  // its back-forward cache exactly as it was left - button still disabled - so
+  // when the page is shown again from the cache, reset it.
+  useEffect(() => {
+    function handlePageShow(event: PageTransitionEvent) {
+      if (event.persisted) setLoading(false);
+    }
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
 
   const effectiveStayMinutes = stayMinutes ? Number(stayMinutes) : restaurant.default_stay_minutes;
   const isDurationValid = effectiveStayMinutes >= 30 && effectiveStayMinutes <= 180;
@@ -198,10 +221,37 @@ export function ReservationForm({
     event.preventDefault();
     setError(null);
     setConfirmation(null);
+    setReturnDismissed(true);
     setLoading(true);
 
-    const supabase = createClient();
     const hasTables = selectedTableIds.length > 0;
+
+    // Pay first, book after: with an order, nothing is booked here. The booking
+    // request goes to Stripe's checkout; the reservation is created by the
+    // payment webhook once the payment has succeeded, so a failed or abandoned
+    // payment leaves no reservation. (create-checkout dry-runs the booking first,
+    // so a request that can't be booked is refused here, before any payment.)
+    if (cartItems.length > 0 && orderId) {
+      const checkout = await startCheckout({
+        orderId,
+        restaurantId: restaurant.id,
+        partySize: Number(effectivePartySize),
+        startsAt: new Date(startsAt).toISOString(),
+        stayMinutes: stayMinutes ? Number(stayMinutes) : null,
+        sectionId: hasTables ? null : sectionId || null,
+        tableIds: hasTables ? selectedTableIds : null,
+      });
+      if ("url" in checkout) {
+        // Off to Stripe's hosted page; the button stays disabled until the page unloads.
+        window.location.assign(checkout.url);
+        return;
+      }
+      setLoading(false);
+      setError(checkout.error);
+      return;
+    }
+
+    const supabase = createClient();
     const { data, error: rpcError } = await supabase.rpc("create_reservation", {
       p_restaurant_id: restaurant.id,
       p_party_size: Number(effectivePartySize),
@@ -209,7 +259,6 @@ export function ReservationForm({
       p_stay_minutes: stayMinutes ? Number(stayMinutes) : null,
       p_section_id: hasTables ? null : sectionId || null,
       p_table_ids: hasTables ? selectedTableIds : null,
-      p_order_id: cartItems.length > 0 ? orderId : null,
     });
 
     if (rpcError || !data) {
@@ -251,12 +300,8 @@ export function ReservationForm({
 
     setLoading(false);
     const confirmedAt = new Date(data.starts_at);
-    // Not "je plaćena" (is paid) - there's no real payment integration yet
-    // (see the placeholder card above the submit button), so claiming a
-    // charge went through would be actively misleading.
-    const orderText = cartItems.length > 0 ? ` Porudžbina u iznosu od ${formatPrice(cartTotal(cartItems))} je zabeležena.` : "";
     setConfirmation(
-      `Potvrđeno: rezervacija za ${confirmedAt.toLocaleDateString("sr-RS")} u ${confirmedAt.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.${assignedText}${orderText}`,
+      `Potvrđeno: rezervacija za ${confirmedAt.toLocaleDateString("sr-RS")} u ${confirmedAt.toLocaleTimeString("sr-RS", { hour: "2-digit", minute: "2-digit" })}.${assignedText}`,
     );
     setStartsAt("");
     setStayMinutes("");
@@ -413,7 +458,10 @@ export function ReservationForm({
           <div className="space-y-2 rounded-md border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900/40">
             <h3 className="text-sm font-medium">Plaćanje karticom</h3>
             <p className="text-sm text-stone-600 dark:text-stone-400">
-              Integracija plaćanja uskoro dolazi - trenutno se samo simulira.
+              Rezervacija se pravi tek nakon uspešnog plaćanja: bićete preusmereni na Stripe stranicu, a ako plaćanje ne uspe
+              ili ga otkažete, rezervacija neće biti napravljena. Ovo je test režim - novac se ne naplaćuje, koristite
+              test karticu 4242 4242 4242 4242. Iznos se na Stripe stranici prikazuje u evrima po fiksnom kursu
+              (1 EUR = 117 RSD).
             </p>
           </div>
         )}
@@ -429,6 +477,8 @@ export function ReservationForm({
             {confirmation}
           </p>
         )}
+
+        {paymentReturn && !returnDismissed && <PaymentReturnBanner kind={paymentReturn.kind} text={paymentReturn.text} />}
 
         <button
           type="submit"
