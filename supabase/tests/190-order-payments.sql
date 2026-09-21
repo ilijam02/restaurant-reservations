@@ -267,13 +267,13 @@ select throws_ok(
 -- local test database's default privileges grant it, leaving RLS (no update
 -- policy at all) to filter every row. Either way nothing may change, so the
 -- assertion is on the outcome, not on the symptom.
-do $
+do $$
 begin
   update public.orders set payment_status = 'paid' where reservation_id is not null;
 exception
   when insufficient_privilege then
     null;
-end $;
+end $$;
 select tests.authenticate_as_service_role();
 select is(
   (select count(*)::integer from public.orders where payment_status = 'paid' and restaurant_id = (select id from public.restaurants where name = 'Pay Kapacitet')),
