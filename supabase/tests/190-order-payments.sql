@@ -262,12 +262,25 @@ select throws_ok(
   null,
   'an authenticated user cannot call mark_order_refunded'
 );
-select throws_ok(
-  $$update public.orders set payment_status = 'paid' where reservation_id is not null$$,
-  '42501',
-  null,
-  'an authenticated user cannot write payment_status'
+-- Whether this errors or silently touches no rows depends on the environment:
+-- authenticated has no UPDATE grant on orders in the hosted project, but the
+-- local test database's default privileges grant it, leaving RLS (no update
+-- policy at all) to filter every row. Either way nothing may change, so the
+-- assertion is on the outcome, not on the symptom.
+do $
+begin
+  update public.orders set payment_status = 'paid' where reservation_id is not null;
+exception
+  when insufficient_privilege then
+    null;
+end $;
+select tests.authenticate_as_service_role();
+select is(
+  (select count(*)::integer from public.orders where payment_status = 'paid' and restaurant_id = (select id from public.restaurants where name = 'Pay Kapacitet')),
+  1,
+  'an authenticated user cannot write payment_status (only customer_8''s order is paid)'
 );
+select tests.authenticate_as('customer_7');
 
 -- === A pending refund blocks deleting the account / restaurant that could retry it ===
 -- customer_7 still has a refund_pending order; owner_h's restaurant has two.
