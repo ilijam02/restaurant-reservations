@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { describeOrdering, describeRecommendation, rankRestaurants, type Recommendation } from "./recommendations";
+import { describeOrdering, rankRestaurants, type Recommendation } from "./recommendations";
 
 const rec = (over: Partial<Recommendation> & { restaurant_id: string; rank: number }): Recommendation => ({
   personalization: 0,
-  similar_users: 0,
-  booked_before: false,
-  popular: false,
   ...over,
 });
 
@@ -38,26 +35,6 @@ describe("rankRestaurants", () => {
   });
 });
 
-describe("describeRecommendation", () => {
-  it("says so when the customer has already booked there, before anything else", () => {
-    expect(describeRecommendation(rec({ restaurant_id: "a", rank: 1, booked_before: true, similar_users: 3, popular: true }))).toBe(
-      "Već ste rezervisali ovde",
-    );
-  });
-
-  it("counts similar customers with the right Serbian form", () => {
-    expect(describeRecommendation(rec({ restaurant_id: "a", rank: 1, similar_users: 1 }))).toBe("Slično vama · 1 korisnik");
-    expect(describeRecommendation(rec({ restaurant_id: "a", rank: 1, similar_users: 2 }))).toBe("Slično vama · 2 korisnika");
-    expect(describeRecommendation(rec({ restaurant_id: "a", rank: 1, similar_users: 5 }))).toBe("Slično vama · 5 korisnika");
-  });
-
-  it("falls back to popularity, then to nothing", () => {
-    expect(describeRecommendation(rec({ restaurant_id: "a", rank: 1, popular: true }))).toBe("Popularno");
-    expect(describeRecommendation(rec({ restaurant_id: "a", rank: 1 }))).toBeNull();
-    expect(describeRecommendation(undefined)).toBeNull();
-  });
-});
-
 describe("describeOrdering", () => {
   it("explains a purely popularity-based order", () => {
     expect(describeOrdering([rec({ restaurant_id: "a", rank: 1, personalization: 0 })])).toMatch(/^Redosled prema popularnosti/);
@@ -66,6 +43,9 @@ describe("describeOrdering", () => {
   it("reports the personalization as a rounded percentage", () => {
     expect(describeOrdering([rec({ restaurant_id: "a", rank: 1, personalization: 0.8347 })])).toBe(
       "Redosled: 83% prilagođeno vama, ostatak prema popularnosti.",
+    );
+    expect(describeOrdering([rec({ restaurant_id: "a", rank: 1, personalization: 0.667 })])).toBe(
+      "Redosled: 67% prilagođeno vama, ostatak prema popularnosti.",
     );
   });
 

@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { RestaurantBrowser } from "@/components/restaurant-browser";
 import { RefreshWhenSignalsChange } from "@/components/refresh-when-signals-change";
-import { describeOrdering, describeRecommendation, rankRestaurants, type Recommendation } from "@/lib/recommendations";
+import { describeOrdering, rankRestaurants, type Recommendation } from "@/lib/recommendations";
 
 export async function RestaurantList() {
   const supabase = await createClient();
@@ -16,17 +16,11 @@ export async function RestaurantList() {
     console.error("recommend_restaurants failed:", recommendationError.code, recommendationError.message);
   }
   const recommendations = (recommendationRows as Recommendation[] | null) ?? null;
-  const byRestaurant = new Map((recommendations ?? []).map((r) => [r.restaurant_id, r]));
-
-  const ranked = rankRestaurants(restaurants ?? [], recommendations).map((restaurant) => ({
-    ...restaurant,
-    note: describeRecommendation(byRestaurant.get(restaurant.id)),
-  }));
 
   return (
     <>
       <RefreshWhenSignalsChange />
-      <RestaurantBrowser restaurants={ranked} ordering={describeOrdering(recommendations)} />
+      <RestaurantBrowser restaurants={rankRestaurants(restaurants ?? [], recommendations)} ordering={describeOrdering(recommendations)} />
     </>
   );
 }

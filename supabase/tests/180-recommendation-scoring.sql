@@ -1,7 +1,8 @@
--- Coverage for supabase/migrations/20260920120000_recommendation_scoring.sql:
--- the collaborative-KNN scoring behind recommend_restaurants(), the popularity
--- fallback, the blend, recency, the two parameter profiles, and who is allowed
--- to call what.
+-- Coverage for the recommendation scoring, last rewritten in
+-- supabase/migrations/20260925100000_simplify_recommendations.sql: the
+-- collaborative-KNN scoring behind recommend_restaurants(), the popularity
+-- fallback, the blend, recency (one half-life per profile), the two parameter
+-- profiles, and who is allowed to call what.
 --
 -- Everything time-dependent is evaluated at a fixed instant (tests.as_of), and
 -- every event is placed relative to it, so the numbers below don't drift.
@@ -20,7 +21,7 @@
 -- `live` (events relative to the real now(), for the tests of the public wrapper) and
 -- victim / real1 / real2 / sy1..sy6 / niche / fake1 / fake2 (isolated throwaway-account attacks, below).
 begin;
-select plan(61);
+select plan(57);
 
 select tests.create_supabase_user('owner_u', 'owneru@test.com', null,
   '{"first_name":"Owner","last_name":"U","phone":"555-0071","role":"owner"}'::jsonb);
@@ -153,7 +154,7 @@ select is(
 -- === A customer with history: neighbors decide ===
 select is(
   (select round(max(personalization), 4) from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz)),
-  0.8347::numeric,
+  0.7826::numeric,
   'Ana''s personalization = her total affinity / (total + 2) in the demo profile'
 );
 select is(
@@ -164,20 +165,18 @@ select is(
   'Ana (Asian group): a restaurant her neighbors booked recently but she never did ranks first, the grill group ranks last'
 );
 select is(
-  (select array_agg(r.name order by r.name)
-   from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s
-   join public.restaurants r on r.id = s.restaurant_id
-   where s.booked_before),
-  array['Sakura Sushi', 'Tokyo Ramen'],
-  'booked_before marks exactly the restaurants Ana has a completed or active booking at'
+  (select round(s.knn_score, 4)
+   from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s join public.restaurants r on r.id = s.restaurant_id
+   where r.name = 'Osaka Izakaya'),
+  1.0000::numeric,
+  'Osaka, where both of Ana''s neighbors (Boris, Cvijeta) went recently, has the best neighbor score, exactly 1'
 );
 select is(
-  (select s.similar_users
-   from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s
-   join public.restaurants r on r.id = s.restaurant_id
-   where r.name = 'Osaka Izakaya'),
-  2,
-  'two of Ana''s neighbors (Boris, Cvijeta) have a signal for Osaka; the count says how many, never who'
+  (select round(s.knn_score, 4)
+   from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s join public.restaurants r on r.id = s.restaurant_id
+   where r.name = 'Gaucho Steakhouse'),
+  0::numeric,
+  'the grill group, which none of her neighbors touched, has no neighbor score at all'
 );
 select is(
   (select (array_agg(r.name order by s.rank))[1:6]
@@ -187,15 +186,15 @@ select is(
   'Dejan (grill group): the mirror image, with the Asian group last'
 );
 -- Scores are pinned too (to 4 decimals), not just the order: they are what
--- catches a wrong similarity weighting, a missing norm or a lost penalty.
+-- catches a wrong similarity weighting, a missing norm or a wrong blend.
 select is(
   (select (array_agg(round(s.score, 4) order by s.rank))[1:6] from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s),
-  array[1.0000, 0.4257, 0.1329, 0.1197, 0.0663, 0.0281]::numeric[],
+  array[1.0000, 0.5974, 0.2181, 0.1690, 0.0839, 0.0567]::numeric[],
   'Ana''s six best scores (demo profile)'
 );
 select is(
   (select (array_agg(round(s.score, 4) order by s.rank))[1:6] from public.recommendation_scores(tests.get_supabase_uid('dejan'), 'demo', current_setting('tests.as_of')::timestamptz) s),
-  array[0.8990, 0.6707, 0.2453, 0.1687, 0.1054, 0.0300]::numeric[],
+  array[0.8685, 0.8438, 0.2802, 0.2141, 0.1507, 0.0757]::numeric[],
   'Dejan''s six best scores (demo profile)'
 );
 
@@ -220,29 +219,22 @@ select is(
   'and one in the future (age 0) weighs its full amount'
 );
 select is(
-  (select round(s.score / nullif(s.personalization * s.knn_score + (1 - s.personalization) * s.popularity_score, 0), 6)
-   from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s join public.restaurants r on r.id = s.restaurant_id
-   where r.name = 'Osaka Izakaya'),
-  1::numeric,
-  'a restaurant Ana never booked keeps its full blended score'
-);
-select ok(
-  (select s.score / nullif(s.personalization * s.knn_score + (1 - s.personalization) * s.popularity_score, 0) < 1
-   from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s join public.restaurants r on r.id = s.restaurant_id
-   where r.name = 'Sakura Sushi'),
-  'a restaurant she booked recently loses part of it (the repeat-visit penalty)'
+  (select max(abs(s.score - (s.personalization * s.knn_score + (1 - s.personalization) * s.popularity_score)))
+   from public.recommendation_scores(tests.get_supabase_uid('ana'), 'demo', current_setting('tests.as_of')::timestamptz) s),
+  0::numeric,
+  'a restaurant Ana booked recently is not marked down: every score is exactly the blend of the neighbor and popularity scores'
 );
 
 -- === The two profiles ===
 select is(
   (select round(max(personalization), 4) from public.recommendation_scores(tests.get_supabase_uid('ana'), 'realistic', current_setting('tests.as_of')::timestamptz)),
-  0.5695::numeric,
-  'the realistic profile trusts the neighbors less than the demo one for the same history (blend constant 10, not 2)'
+  0.5423::numeric,
+  'the realistic profile trusts the neighbors less than the demo one for the same history (blend constant 10, not 2, and a longer half-life)'
 );
 select is(
   (select (array_agg(round(s.score, 4) order by s.rank))[1:6] from public.recommendation_scores(tests.get_supabase_uid('ana'), 'realistic', current_setting('tests.as_of')::timestamptz) s),
-  array[1.0000, 0.5680, 0.3764, 0.3327, 0.1580, 0.1482]::numeric[],
-  'Ana''s six best scores (realistic profile: slower decay, more neighbors)'
+  array[1.0000, 0.7031, 0.4400, 0.4075, 0.1830, 0.1665]::numeric[],
+  'Ana''s six best scores (realistic profile: 60-day half-life, more neighbors)'
 );
 select throws_ok(
   $$select * from public.recommendation_scores(tests.get_supabase_uid('ana'), 'nepostojeci', now())$$,
@@ -365,10 +357,10 @@ select is(
   'and no neighbor-based score at all'
 );
 
--- === What counts, and how much (restaurant_affinities, both half-lives 30 days) ===
+-- === What counts, and how much (restaurant_affinities, half-life 30 days) ===
 select is(
   (select round(a.affinity, 6)
-   from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
+   from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
    join public.restaurants r on r.id = a.restaurant_id
    where a.user_id = tests.get_supabase_uid('edge') and r.name = 'Sakura Sushi'),
   round(4 * power(0.5::numeric, (30.0 / 1440) / 30), 6),
@@ -376,7 +368,7 @@ select is(
 );
 select is(
   (select round(a.affinity, 6)
-   from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
+   from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
    join public.restaurants r on r.id = a.restaurant_id
    where a.user_id = tests.get_supabase_uid('edge') and r.name = 'Tokyo Ramen'),
   round(6 * power(0.5::numeric, 2.0 / 30), 6),
@@ -384,7 +376,7 @@ select is(
 );
 select is(
   (select round(a.affinity, 6)
-   from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
+   from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
    join public.restaurants r on r.id = a.restaurant_id
    where a.user_id = tests.get_supabase_uid('edge') and r.name = 'Bife Bar'),
   round(5 * power(0.5::numeric, 1.0 / 30), 6),
@@ -392,7 +384,7 @@ select is(
 );
 select is(
   (select a.affinity
-   from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
+   from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
    join public.restaurants r on r.id = a.restaurant_id
    where a.user_id = tests.get_supabase_uid('edge') and r.name = 'Osaka Izakaya'),
   4::numeric,
@@ -400,7 +392,7 @@ select is(
 );
 select is(
   (select round(a.affinity, 6)
-   from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
+   from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
    join public.restaurants r on r.id = a.restaurant_id
    where a.user_id = tests.get_supabase_uid('edge') and r.name = 'Gaucho Steakhouse'),
   round(2 * power(0.5::numeric, 1.0 / 30), 6),
@@ -408,7 +400,7 @@ select is(
 );
 select is(
   (select round(a.affinity, 6)
-   from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
+   from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
    join public.restaurants r on r.id = a.restaurant_id
    where a.user_id = tests.get_supabase_uid('edge') and r.name = 'Parrilla Grill'),
   round(3 * power(0.5::numeric, 200.0 / 30), 6),
@@ -416,19 +408,19 @@ select is(
 );
 select is_empty(
   $$select 1
-    from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
+    from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
     join public.restaurants r on r.id = a.restaurant_id
     where a.user_id = tests.get_supabase_uid('edge') and r.name = 'Stari Restoran'$$,
   'a booking older than the 730-day horizon is ignored'
 );
 select is(
-  (select count(*) from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) where user_id is null),
+  (select count(*) from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) where user_id is null),
   0::bigint,
   'an anonymized booking (no customer) contributes to nobody'
 );
 select is_empty(
   $$select 1
-    from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
+    from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
     join public.restaurants r on r.id = a.restaurant_id
     where r.name = 'Zzz Arhiva'$$,
   'an archived restaurant has no affinities, whatever was booked, favorited or viewed there'
@@ -442,37 +434,22 @@ select is_empty(
 );
 
 -- === k: how many neighbors are consulted ===
-select ok(
-  (select max(similar_users) <= 4 from public.recommendation_scores(tests.get_supabase_uid('hub'), 'demo', current_setting('tests.as_of')::timestamptz)),
-  'the demo profile (k = 4) never counts more than 4 neighbors at a restaurant'
-);
-select ok(
-  (select max(similar_users) from public.recommendation_scores(tests.get_supabase_uid('hub'), 'realistic', current_setting('tests.as_of')::timestamptz))
-    > (select max(similar_users) from public.recommendation_scores(tests.get_supabase_uid('hub'), 'demo', current_setting('tests.as_of')::timestamptz)),
-  'the realistic profile (k = 30) consults more of the hub''s neighbors than the demo one (k = 4)'
+-- The hub completed a booking at all six scenario restaurants, so it has more
+-- eligible neighbors (ana, boris, cvijeta, dejan, emilija, edge) than the demo
+-- profile's k = 4: pinning its scores catches a k that is ignored.
+select is(
+  (select (array_agg(round(s.score, 4) order by s.rank))[1:6] from public.recommendation_scores(tests.get_supabase_uid('hub'), 'demo', current_setting('tests.as_of')::timestamptz) s),
+  array[1.0000, 0.8373, 0.7796, 0.6810, 0.5227, 0.1204]::numeric[],
+  'the hub''s six best scores with the demo profile (k = 4) - pinned, so ignoring k changes them'
 );
 
--- === "Been there" means a booking ===
-select is(
-  (select array_agg(r.name order by r.name)
-   from public.restaurant_affinities(30, 30, current_setting('tests.as_of')::timestamptz) a
-   join public.restaurants r on r.id = a.restaurant_id
-   where a.user_id = tests.get_supabase_uid('edge') and a.booking_affinity > 0),
-  array['Bife Bar', 'Osaka Izakaya', 'Sakura Sushi', 'Tokyo Ramen'],
-  'booking_affinity is the reservation part only: no favorite (Parrilla), page views (Gaucho), no_show/cancelled (Usamljeni) or booking past the horizon (Stari Restoran) has any'
-);
-select is(
-  (select array_agg(r.name order by r.name)
-   from public.recommendation_scores(tests.get_supabase_uid('edge'), 'demo', current_setting('tests.as_of')::timestamptz) s join public.restaurants r on r.id = s.restaurant_id
-   where s.booked_before),
-  array['Bife Bar', 'Osaka Izakaya', 'Sakura Sushi', 'Stari Restoran', 'Tokyo Ramen'],
-  'booked_before counts completed and active bookings (ongoing, a confirmed one in the future) however old - it is a fact about the past, not a weight, so the 730-day horizon does not apply - and not a no_show or a cancelled one'
-);
-select ok(
-  (select bool_and(round(s.score / nullif(s.personalization * s.knn_score + (1 - s.personalization) * s.popularity_score, 0), 6) = 1)
-   from public.recommendation_scores(tests.get_supabase_uid('edge'), 'demo', current_setting('tests.as_of')::timestamptz) s join public.restaurants r on r.id = s.restaurant_id
-   where r.name in ('Parrilla Grill', 'Gaucho Steakhouse')),
-  'a restaurant the customer only favorited or viewed is not penalized as a repeat visit'
+-- === A booking that never happened adds nothing ===
+select is_empty(
+  $$select 1
+    from public.restaurant_affinities(30, current_setting('tests.as_of')::timestamptz) a
+    join public.restaurants r on r.id = a.restaurant_id
+    where a.user_id = tests.get_supabase_uid('edge') and r.name = 'Usamljeni'$$,
+  'a restaurant where a customer only has a no_show and a cancelled booking has no affinity for them at all'
 );
 
 -- === Throwaway accounts cannot be "someone like you" ===
@@ -537,11 +514,11 @@ insert into public.favorites (user_id, restaurant_id, created_at)
 -- FIXTURE-SYBIL-END
 
 select is(
-  (select s.similar_users
+  (select round(s.knn_score, 4)
    from public.recommendation_scores(tests.get_supabase_uid('victim'), 'demo', current_setting('tests.as_of')::timestamptz) s
    join public.restaurants r on r.id = s.restaurant_id where r.name = 'Sibil Z'),
-  2,
-  'both real neighbors still count at Z: the four one-view accounts did not crowd them out of the top-k (with plain similarity Z has 0 neighbors)'
+  1.0000::numeric,
+  'both real neighbors still count: Z, what they booked, has the best neighbor score - the four one-view accounts did not crowd them out of the top-k (with plain similarity Z has no neighbor score)'
 );
 select ok(
   (select (select s.rank from public.recommendation_scores(tests.get_supabase_uid('victim'), 'demo', current_setting('tests.as_of')::timestamptz) s
@@ -551,11 +528,11 @@ select ok(
   'what the real neighbors booked (Z) ranks above the restaurant the favorite-only accounts are pushing (T)'
 );
 select is(
-  (select s.similar_users
+  (select round(s.knn_score, 4)
    from public.recommendation_scores(tests.get_supabase_uid('victim'), 'demo', current_setting('tests.as_of')::timestamptz) s
    join public.restaurants r on r.id = s.restaurant_id where r.name = 'Sibil T'),
-  0,
-  'no account without a completed booking is a neighbor - not with four favorites, not with an upcoming booking: nobody counts as similar to the victim at T'
+  0::numeric,
+  'no account without a completed booking is a neighbor - not with four favorites, not with an upcoming booking: the victim''s neighbors give T no score at all'
 );
 select is(
   (select max(personalization)
@@ -575,7 +552,7 @@ select is(
          from public.recommendation_scores(tests.get_supabase_uid('victim'), 'demo', current_setting('tests.as_of')::timestamptz) s
          join public.restaurants r on r.id = s.restaurant_id
          where r.name in ('Sibil X', 'Sibil Y', 'Sibil Z', 'Sibil T')) x),
-  array[0.1121, 0.4839, 0.2856, 0.8828]::numeric[],
+  array[0.1163, 0.6182, 0.3691, 0.8666]::numeric[],
   'the victim''s scores at T, X, Y, Z (in name order) - pinned, so any change to who counts as a neighbor shows up'
 );
 
@@ -604,10 +581,6 @@ select set_config('tests.live_pers_demo',
 select set_config('tests.live_pers_realistic',
   (select round(max(personalization), 4)::text
    from public.recommendation_scores(tests.get_supabase_uid('live'), 'realistic', now())), true);
-select set_config('tests.live_popular',
-  (select string_agg(restaurant_id::text, ',' order by rank)
-   from public.recommendation_scores(tests.get_supabase_uid('live'), 'demo', now())
-   where popularity_score > 0), true);
 
 select tests.clear_authentication();
 select throws_ok(
@@ -625,7 +598,7 @@ select throws_ok(
   'a customer cannot call the scoring core directly (which would let them rank as somebody else)'
 );
 select throws_ok(
-  $$select * from public.restaurant_affinities(30, 30, now())$$,
+  $$select * from public.restaurant_affinities(30, now())$$,
   '42501',
   null,
   'nor read every customer''s affinities'
@@ -652,9 +625,9 @@ select ok(
   'and it is really ranked from their history, not the alphabetical fallback'
 );
 select is(
-  (select string_agg(restaurant_id::text, ',' order by rank) from public.recommend_restaurants() where popular),
-  current_setting('tests.live_popular'),
-  'the popular flag is exactly "some customer has a signal at this restaurant"'
+  (select count(distinct personalization) from public.recommend_restaurants()),
+  1::bigint,
+  'personalization is the same on every row of one customer''s list (the page reads it once, from the first row)'
 );
 
 select tests.authenticate_as('owner_u');
@@ -689,8 +662,8 @@ select isnt(
 reset role;
 select is(
   pg_get_function_result('public.recommend_restaurants()'::regprocedure),
-  'TABLE(rank integer, restaurant_id uuid, personalization numeric, similar_users integer, booked_before boolean, popular boolean)',
-  'the result has no scores (the neighbors'' activity scaled to 0..1 would let a customer read another customer''s behavior off it) and no customer ids'
+  'TABLE(rank integer, restaurant_id uuid, personalization numeric)',
+  'the result is only a rank, a restaurant id and the personalization share: no scores (the neighbors'' activity scaled to 0..1 would let a customer read another customer''s behavior off it), no per-restaurant hints, no customer ids'
 );
 select has_function('public', 'recommend_restaurants', array[]::text[], 'recommend_restaurants() takes no arguments');
 select hasnt_function(

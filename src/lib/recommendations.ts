@@ -1,18 +1,13 @@
-import { pluralSr } from "@/lib/plural";
-
-// One row of recommend_restaurants() (see 20260920130000_recommendation_review_fixes.sql):
+// One row of recommend_restaurants() (see 20260925100000_simplify_recommendations.sql):
 // the caller's own ranking. It deliberately carries no scores - the
 // neighbors' activity scaled to 0..1 would let a customer read another
-// customer's behavior off it. `similar_users` is a count of the caller's
-// neighbors with a signal at the restaurant, `popular` whether anyone at all
-// has one; neither says who.
+// customer's behavior off it. `personalization` (0..1) is the same on every row
+// of one customer's list: the share of the order that is tailored to them, the
+// rest being popularity.
 export type Recommendation = {
   rank: number;
   restaurant_id: string;
   personalization: number;
-  similar_users: number;
-  booked_before: boolean;
-  popular: boolean;
 };
 
 // Restaurants in recommendation order. `restaurants` is expected in its
@@ -27,19 +22,6 @@ export function rankRestaurants<T extends { id: string }>(restaurants: T[], reco
     .map((restaurant, index) => ({ restaurant, index, rank: rankById.get(restaurant.id) ?? Number.POSITIVE_INFINITY }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map((entry) => entry.restaurant);
-}
-
-// The one-line "why" under a restaurant card, or null when there is nothing
-// worth saying. Only ever aggregate information about other customers.
-export function describeRecommendation(recommendation: Recommendation | undefined): string | null {
-  if (!recommendation) return null;
-  if (recommendation.booked_before) return "Već ste rezervisali ovde";
-  if (recommendation.similar_users > 0) {
-    const n = recommendation.similar_users;
-    return `Slično vama · ${n} ${pluralSr(n, "korisnik", "korisnika", "korisnika")}`;
-  }
-  if (recommendation.popular) return "Popularno";
-  return null;
 }
 
 // A sentence above the list explaining how it is ordered: how much of the
